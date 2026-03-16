@@ -17,3 +17,15 @@ runs/
 # OS files
 .DS_Store
 Thumbs.db
+
+dataset_raw/
+runs/
+*.pth
+*.pt
+*.log
+*.zip
+*.tar
+*.nii
+*.dcm
+
+
