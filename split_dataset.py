@@ -25,12 +25,21 @@ def split_dataset(input_dir, output_dir, train_ratio=0.7, val_ratio=0.15):
         for f in tqdm(file_list, desc=f"Copying {split}"):
             shutil.copy(os.path.join(img_dir, f), os.path.join(img_out, f))
             base = os.path.splitext(f)[0]
-            mask_file = base + ".png"
-            mask_path = os.path.join(mask_dir, mask_file)
-            if os.path.exists(mask_path):
-                shutil.copy(mask_path, os.path.join(mask_out, mask_file))
+
+            # Handle both mask naming conventions
+            mask_file_seg = base + "_Segmentation.png"
+            mask_path_seg = os.path.join(mask_dir, mask_file_seg)
+
+            mask_file_plain = base + ".png"
+            mask_path_plain = os.path.join(mask_dir, mask_file_plain)
+
+            if os.path.exists(mask_path_seg):
+                shutil.copy(mask_path_seg, os.path.join(mask_out, mask_file_seg))
+            elif os.path.exists(mask_path_plain):
+                shutil.copy(mask_path_plain, os.path.join(mask_out, mask_file_plain))
             else:
                 print(f"⚠️ No mask found for {f}")
+
 
     copy_files(train_files, "train")
     copy_files(val_files, "val")

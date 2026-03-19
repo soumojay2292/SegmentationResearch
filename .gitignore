@@ -28,4 +28,24 @@ runs/
 *.nii
 *.dcm
 
+# Ignore datasets and raw data
+dataset/
+dataset_raw/
+dataset_split/
+
+# Ignore checkpoints and results
+checkpoints/
+results/
+runs/
+
+# Ignore images and masks inside datasets
+*.jpg
+*.png
+*.jpeg
+*.tif
+*.bmp
+
+# Ignore model weights
+*.pth
+
 

@@ -5,7 +5,7 @@ import cv2
 
 # Paths
 csv_path = "dataset_raw/ISIC_2019/ISIC_2019_Training_GroundTruth.csv"
-out_dir = "dataset_raw/ISIC_2019/ISIC_2019_Training_GroundTruth_png"
+out_dir = "dataset_raw/ISIC_2019/masks"
 os.makedirs(out_dir, exist_ok=True)
 
 # Load CSV

@@ -45,9 +45,30 @@ def main(model_name, dataset_name):
 
     # Dataset paths
     base_path = f"dataset_split_{dataset_name}"
-    train_ds = SegDataset(f"{base_path}/train/images", f"{base_path}/train/masks", image_size=128)
-    val_ds   = SegDataset(f"{base_path}/val/images", f"{base_path}/val/masks", image_size=128)
-    test_ds  = SegDataset(f"{base_path}/test/images", f"{base_path}/test/masks", image_size=128)
+    train_csv = f"{base_path}/train.csv"
+    val_csv   = f"{base_path}/val.csv"
+    test_csv  = f"{base_path}/test.csv"
+
+    train_ds = SegDataset(
+        train_csv,
+        f"{base_path}/train/images",
+        f"{base_path}/train/masks",
+        image_size=64
+    )
+
+    val_ds = SegDataset(
+        val_csv,
+        f"{base_path}/val/images",
+        f"{base_path}/val/masks",
+        image_size=64
+    )
+
+    test_ds = SegDataset(
+        test_csv,
+        f"{base_path}/test/images",
+        f"{base_path}/test/masks",
+        image_size=64
+    )
 
 
     train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4, pin_memory=True)
@@ -82,7 +103,7 @@ def main(model_name, dataset_name):
 
     scaler = torch.cuda.amp.GradScaler()
     # Training loop
-    num_epochs = 20
+    num_epochs = 100
     global_step = 0
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}/{num_epochs} started...")
