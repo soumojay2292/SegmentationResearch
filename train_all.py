@@ -12,13 +12,15 @@ from torch.utils.tensorboard import SummaryWriter
 import datetime
 import csv
 from torch.cuda.amp import GradScaler
-
+# from segment_anything import sam_model_registry
+# from maffnet import MAFFNet  
 
 
 # Models to train
+# sam_encoder = sam_model_registry["vit_h"](checkpoint="sam_vit_h.pth")
 MODELS = {
     "unet": lambda: UNet(),
-    "maffnet": lambda: MAFFNet(),
+    # "maffnet": lambda: MAFFNet(encoder=sam_encoder),
     "transunet": lambda: TransUNet(in_ch=3, out_ch=1, embed_dim=64, num_heads=2),
 }
 

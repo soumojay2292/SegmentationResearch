@@ -1,72 +1,96 @@
-import torch, torch.nn as nn
+import torch
+import torch.nn as nn
 import torch.fft
 
-class PositionalEncoding2D(nn.Module):
-    def __init__(self, channels: int):
+
+# --- Mixed Multi-scale Perception Adaptor ---
+class MMPA(nn.Module):
+    def __init__(self, in_channels):
         super().__init__()
-        self.channels = channels
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, C, H, W = x.shape
-        device = x.device
-
-        if C != self.channels:
-            raise ValueError(f"Expected {self.channels} channels, got {C}")
-
-        pe = torch.zeros(C, H, W, device=device)
-        y_pos = torch.arange(0, H, device=device).unsqueeze(1).float()
-        x_pos = torch.arange(0, W, device=device).unsqueeze(0).float()
-
-        div_term = torch.exp(
-            torch.arange(0, C // 2, device=device).float() * -(torch.log(torch.tensor(10000.0, device=device)) / (C // 2))
-        )
-
-        pe[0::2, :, :] = torch.sin(y_pos * div_term.unsqueeze(0)).unsqueeze(2).repeat(1, 1, W)
-        pe[1::2, :, :] = torch.cos(x_pos * div_term.unsqueeze(1)).unsqueeze(0).repeat(H, 1, 1)
-
-        return x + pe.unsqueeze(0)
-
-
-
-class TransformerBlock(nn.Module):
-    def __init__(self, dim, num_heads=4):
-        super().__init__()
-        self.attn = nn.MultiheadAttention(dim, num_heads)
-        self.ff = nn.Sequential(
-            nn.Linear(dim, dim),
-            nn.ReLU(),
-            nn.Linear(dim, dim)
+        self.proj = nn.Linear(in_channels, 32)
+        self.perception1 = nn.Conv2d(32, 32, kernel_size=3, dilation=3, groups=32)
+        self.perception2 = nn.Conv2d(32, 32, kernel_size=3, dilation=5, groups=32)
+        self.perception3 = nn.Conv2d(32, 32, kernel_size=3, dilation=7, groups=32)
+        self.fc = nn.Sequential(
+            nn.Linear(32, 16),
+            nn.GELU(),
+            nn.Linear(16, 3),
+            nn.Softmax(dim=-1)
         )
 
     def forward(self, x):
-        B, C, H, W = x.shape
-        seq = x.flatten(2).permute(2, 0, 1)   # [HW, B, C]
-        attn, _ = self.attn(seq, seq, seq)
-        seq = seq + attn
-        seq = seq + self.ff(seq)
-        out = seq.permute(1, 2, 0).contiguous().view(B, C, H, W)
+        z = self.proj(x)
+        e1 = self.perception1(z)
+        e2 = self.perception2(z)
+        e3 = self.perception3(z)
+        weights = self.fc(z.mean(dim=(2,3)))
+        out = (weights[:,0].unsqueeze(1)*e1 +
+               weights[:,1].unsqueeze(1)*e2 +
+               weights[:,2].unsqueeze(1)*e3)
         return out
 
-
-class MAFFNet(nn.Module):
-    def __init__(self, height=128, width=128):
+# --- Frequency Guided Feature Fusion ---
+class FGFF(nn.Module):
+    def __init__(self, in_channels):
         super().__init__()
-        self.enc = nn.Sequential(
-            nn.Conv2d(3, 64, 3, padding=1), nn.ReLU(),
-            nn.Conv2d(64, 128, 3, padding=1), nn.ReLU()
+        self.attn = nn.MultiheadAttention(embed_dim=in_channels, num_heads=4)
+
+    def forward(self, spatial, freq):
+        B, C, H, W = spatial.shape
+        spatial_flat = spatial.view(B, C, -1).permute(2,0,1)
+        freq_flat = freq.view(B, C, -1).permute(2,0,1)
+        fused, _ = self.attn(spatial_flat, freq_flat, freq_flat)
+        return fused.permute(1,2,0).view(B, C, H, W)
+
+# --- Enhanced Decoder Block ---
+class EDB(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(out_channels, out_channels, 2, stride=2)
         )
-        self.pos_enc = PositionalEncoding2D(128)
-        self.trans = TransformerBlock(128)
-        self.dec = nn.Sequential(
-            nn.ConvTranspose2d(128, 64, 2, stride=2), nn.ReLU(),
-            nn.Conv2d(64, 1, 1)
-        )
+    def forward(self, x):
+        return self.block(x)
+
+# --- Reconstruction Decoder Block ---
+class RDB(nn.Module):
+    def __init__(self, in_channels):
+        super().__init__()
+        self.reconstruct = nn.Conv2d(in_channels, 3, kernel_size=3, padding=1)
+    def forward(self, x, original):
+        recon = self.reconstruct(x)
+        # auxiliary reconstruction loss will be added in training loop
+        return recon
+
+# --- MAFFNet ---
+class MAFFNet(nn.Module):
+    def __init__(self, encoder):
+        super().__init__()
+        self.encoder = encoder
+        for p in self.encoder.parameters():
+            p.requires_grad = False
+        self.mmpa1 = MMPA(144)
+        self.mmpa2 = MMPA(288)
+        self.mmpa3 = MMPA(576)
+        self.mmpa4 = MMPA(1152)
+        self.fgff = FGFF(32)
+        self.edb1 = EDB(32, 64)
+        self.edb2 = EDB(64, 128)
+        self.rdb = RDB(128)
 
     def forward(self, x):
-        feat = self.enc(x)
-        freq = torch.fft.fft2(feat.float())
-        freq = torch.abs(freq)
-        fused = feat + freq
-        fused = self.pos_enc(fused)   # ✅ add positional encoding
-        fused = self.trans(fused)     # ✅ transformer block
-        return torch.sigmoid(self.dec(fused))
+        x1, x2, x3, x4 = self.encoder(x)
+        f1 = self.mmpa1(x1)
+        f2 = self.mmpa2(x2)
+        f3 = self.mmpa3(x3)
+        f4 = self.mmpa4(x4)
+        freq = torch.fft.fft2(x)
+        freq_mag = torch.abs(freq)
+        fused = self.fgff(f4, freq_mag)
+        d1 = self.edb1(fused)
+        d2 = self.edb2(d1)
+        recon = self.rdb(d2, x)
+        return d2, recon
