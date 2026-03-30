@@ -83,6 +83,11 @@ class MAFFNet(nn.Module):
 
     def forward(self, x):
         x1, x2, x3, x4 = self.encoder(x)
+        x4 = self.encoder.image_encoder(x)
+        # Fake multi-scale (temporary)
+        x3 = torch.nn.functional.interpolate(x4, scale_factor=2, mode='bilinear')
+        x2 = torch.nn.functional.interpolate(x4, scale_factor=4, mode='bilinear')
+        x1 = torch.nn.functional.interpolate(x4, scale_factor=8, mode='bilinear')
         f1 = self.mmpa1(x1)
         f2 = self.mmpa2(x2)
         f3 = self.mmpa3(x3)

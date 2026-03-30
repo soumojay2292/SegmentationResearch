@@ -12,15 +12,17 @@ from torch.utils.tensorboard import SummaryWriter
 import datetime
 import csv
 from torch.cuda.amp import GradScaler
-# from segment_anything import sam_model_registry
-# from maffnet import MAFFNet  
+from segment_anything import sam_model_registry
+from models.maffnet import MAFFNet
+  
 
 
 # Models to train
-# sam_encoder = sam_model_registry["vit_h"](checkpoint="sam_vit_h.pth")
+sam_encoder = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
+print("Encoder loaded successfully!")
 MODELS = {
     "unet": lambda: UNet(),
-    # "maffnet": lambda: MAFFNet(encoder=sam_encoder),
+    "maffnet": lambda: MAFFNet(encoder=sam_encoder),
     "transunet": lambda: TransUNet(in_ch=3, out_ch=1, embed_dim=64, num_heads=2),
 }
 
@@ -79,7 +81,7 @@ def run_all():
             )
 
             # Train for fixed epochs
-            train_loss = trainer.fit(train_loader, val_loader, num_epochs=100)
+            train_loss = trainer.fit(train_loader, val_loader, num_epochs=10)
 
             # Save checkpoint
             ckpt_path = os.path.join(results_dir, f"{model_name}_{dataset_name}.pth")

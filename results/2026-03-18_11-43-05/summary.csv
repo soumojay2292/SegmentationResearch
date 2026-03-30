@@ -1,0 +1,2 @@
+Model,Dataset,Final Train Loss,Final Val Loss,Final Val Dice,Final Val IoU,Checkpoint Path
+unet,ISIC_2016,,1.2225133199244738,0.40095340786501765,0.26769765218098956,results\2026-03-18_11-43-05\unet_ISIC_2016.pth

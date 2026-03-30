@@ -35,7 +35,6 @@ dataset_split/
 
 # Ignore checkpoints and results
 checkpoints/
-results/
 runs/
 
 # Ignore images and masks inside datasets
