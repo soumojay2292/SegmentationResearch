@@ -1,3 +1,6 @@
+from xml.parsers.expat import model
+
+from networkx import union
 import argparse, torch
 from torch.utils.data import DataLoader
 from torch.optim import Adam
@@ -9,19 +12,30 @@ from utils.metrics import dice_coeff, iou_coeff
 from utils.loss import DiceLoss
 import torchvision.utils as vutils
 from torch.utils.tensorboard import SummaryWriter
+from segment_anything import sam_model_registry
+from torch.amp import autocast, GradScaler
 import os
 import torch.nn as nn 
 
 from models.transunet import TransUNet
 
-model = TransUNet(in_ch=3, out_ch=1).cuda()  # move to GPU
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-criterion = torch.nn.BCELoss()  # or Dice loss for segmentation
 
+class ComboLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.bce = nn.BCEWithLogitsLoss()
 
-# Loss function
-criterion = nn.BCEWithLogitsLoss()
-criterion = DiceLoss()
+    def forward(self, pred, target):
+        bce = self.bce(pred, target)
+        pred = torch.sigmoid(pred)
+        intersection = (pred * target).sum(dim=(2,3))
+        union = pred.sum(dim=(2,3)) + target.sum(dim=(2,3))
+
+        dice = 1 - ((2 * intersection + 1e-8) / (union + 1e-8))
+        dice = dice.mean()
+        return bce + dice
+
+criterion = ComboLoss()
 
 # Fix OpenMP duplicate runtime error
 torch.backends.cudnn.benchmark = True
@@ -44,7 +58,7 @@ def main(model_name, dataset_name):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # Dataset paths
-    base_path = f"dataset_split_{dataset_name}"
+    base_path = f"dataset_split/{dataset_name}"
     train_csv = f"{base_path}/train.csv"
     val_csv   = f"{base_path}/val.csv"
     test_csv  = f"{base_path}/test.csv"
@@ -53,21 +67,21 @@ def main(model_name, dataset_name):
         train_csv,
         f"{base_path}/train/images",
         f"{base_path}/train/masks",
-        image_size=64
+        image_size=1024
     )
 
     val_ds = SegDataset(
         val_csv,
         f"{base_path}/val/images",
         f"{base_path}/val/masks",
-        image_size=64
+        image_size=1024
     )
 
     test_ds = SegDataset(
         test_csv,
         f"{base_path}/test/images",
         f"{base_path}/test/masks",
-        image_size=64
+        image_size=1024
     )
 
 
@@ -83,7 +97,8 @@ def main(model_name, dataset_name):
     if model_name == "unet":
         model = UNet()
     elif model_name == "maffnet":
-        model = MAFFNet()
+        sam_encoder = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
+        model = MAFFNet(encoder=sam_encoder)
     elif model_name == "transunet":
         model = TransUNet(in_ch=3, out_ch=1, embed_dim=64, num_heads=2)
     else:
@@ -100,27 +115,44 @@ def main(model_name, dataset_name):
         print(f"GPU name: {torch.cuda.get_device_name(0)}")
     print(next(model.parameters()).device)
 
+    model.eval()
+    with torch.no_grad():
+        test_out = model(torch.randn(1, 3, 224, 224).to(device))
+        print("Model output shape:", test_out.shape)
 
-    scaler = torch.cuda.amp.GradScaler()
+    scaler = GradScaler("cuda")
     # Training loop
-    num_epochs = 100
+    num_epochs = 15
     global_step = 0
     for epoch in range(num_epochs):
-        print(f"Epoch {epoch+1}/{num_epochs} started...")
+        print(f"Epoch {epoch+1}/{num_epochs} started...")   
         model.train()
         for i, (images, labels) in enumerate(train_loader): 
             images, labels = images.to(device), labels.to(device) 
             
             optimizer.zero_grad() 
-            with torch.cuda.amp.autocast():
+            with autocast("cuda"):
                 outputs = model(images)
+                if labels.shape[-1] != outputs.shape[-1]:
+                    labels = torch.nn.functional.interpolate(
+                        labels, 
+                        size=outputs.shape[-2:], 
+                        mode='nearest'
+                        )
+                if labels.shape[-1] != outputs.shape[-1]:
+                    print("Mismatch detected!")
+                if i % 50 == 0:
+                    print("Output:", outputs.shape, "Label:", labels.shape)
                 loss = criterion(outputs, labels)
 
             
             # Backprop with AMP 
-            scaler.scale(loss).backward() 
-            scaler.step(optimizer) 
-            scaler.update() 
+            scaler.scale(loss).backward()
+
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+            scaler.step(optimizer)
+            scaler.update()
             preds = (torch.sigmoid(outputs) > 0.5).float()  
                 
                 # Logging 
@@ -155,7 +187,7 @@ def evaluate(model, loader, device):
     with torch.no_grad():
         for img, mask in loader:
             img, mask = img.to(device), mask.to(device)
-            pred = model(img)
+            pred = torch.sigmoid(model(img))
             dices.append(dice_coeff(pred, mask).item())
             ious.append(iou_coeff(pred, mask).item())
     return sum(dices)/len(dices), sum(ious)/len(ious)

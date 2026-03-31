@@ -1,16 +1,19 @@
+from pyexpat import features
+
 import torch
 import torch.nn as nn
 import torch.fft
+import torch.nn.functional as F
 
 
 # --- Mixed Multi-scale Perception Adaptor ---
 class MMPA(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.proj = nn.Linear(in_channels, 32)
-        self.perception1 = nn.Conv2d(32, 32, kernel_size=3, dilation=3, groups=32)
-        self.perception2 = nn.Conv2d(32, 32, kernel_size=3, dilation=5, groups=32)
-        self.perception3 = nn.Conv2d(32, 32, kernel_size=3, dilation=7, groups=32)
+        self.proj = nn.Conv2d(in_channels, 32, kernel_size=1)
+        self.perception1 = nn.Conv2d(32, 32, kernel_size=3, padding=3, dilation=3, groups=32)
+        self.perception2 = nn.Conv2d(32, 32, kernel_size=3, padding=5, dilation=5, groups=32)
+        self.perception3 = nn.Conv2d(32, 32, kernel_size=3, padding=7, dilation=7, groups=32)
         self.fc = nn.Sequential(
             nn.Linear(32, 16),
             nn.GELU(),
@@ -24,23 +27,24 @@ class MMPA(nn.Module):
         e2 = self.perception2(z)
         e3 = self.perception3(z)
         weights = self.fc(z.mean(dim=(2,3)))
-        out = (weights[:,0].unsqueeze(1)*e1 +
-               weights[:,1].unsqueeze(1)*e2 +
-               weights[:,2].unsqueeze(1)*e3)
+        w1 = weights[:,0].view(-1,1,1,1)
+        w2 = weights[:,1].view(-1,1,1,1)
+        w3 = weights[:,2].view(-1,1,1,1)
+
+        out = w1 * e1 + w2 * e2 + w3 * e3
         return out
 
 # --- Frequency Guided Feature Fusion ---
 class FGFF(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.attn = nn.MultiheadAttention(embed_dim=in_channels, num_heads=4)
+        self.conv = nn.Conv2d(in_channels * 2, in_channels, 1)
+        self.gate = nn.Sigmoid()
 
     def forward(self, spatial, freq):
-        B, C, H, W = spatial.shape
-        spatial_flat = spatial.view(B, C, -1).permute(2,0,1)
-        freq_flat = freq.view(B, C, -1).permute(2,0,1)
-        fused, _ = self.attn(spatial_flat, freq_flat, freq_flat)
-        return fused.permute(1,2,0).view(B, C, H, W)
+        fused = torch.cat([spatial, freq], dim=1)
+        weight = self.gate(self.conv(fused))
+        return spatial * weight + freq * (1 - weight)
 
 # --- Enhanced Decoder Block ---
 class EDB(nn.Module):
@@ -72,30 +76,44 @@ class MAFFNet(nn.Module):
         self.encoder = encoder
         for p in self.encoder.parameters():
             p.requires_grad = False
-        self.mmpa1 = MMPA(144)
-        self.mmpa2 = MMPA(288)
-        self.mmpa3 = MMPA(576)
-        self.mmpa4 = MMPA(1152)
+        self.channel_proj = nn.Conv2d(256, 64, kernel_size=1)
+        self.freq_proj = nn.Conv2d(64, 32, kernel_size=1)
+        self.final_conv = nn.Conv2d(128, 1, kernel_size=1)
+
+        self.mmpa1 = MMPA(64)
+        self.mmpa2 = MMPA(64)
+        self.mmpa3 = MMPA(64)
+        self.mmpa4 = MMPA(64)
         self.fgff = FGFF(32)
         self.edb1 = EDB(32, 64)
         self.edb2 = EDB(64, 128)
         self.rdb = RDB(128)
 
     def forward(self, x):
-        x1, x2, x3, x4 = self.encoder(x)
-        x4 = self.encoder.image_encoder(x)
-        # Fake multi-scale (temporary)
-        x3 = torch.nn.functional.interpolate(x4, scale_factor=2, mode='bilinear')
-        x2 = torch.nn.functional.interpolate(x4, scale_factor=4, mode='bilinear')
-        x1 = torch.nn.functional.interpolate(x4, scale_factor=8, mode='bilinear')
+        x_sam = F.interpolate(x, size=(1024, 1024), mode='bilinear', align_corners=False)
+        features = self.encoder.image_encoder(x_sam)
+        features = F.interpolate(features, size=(224, 224), mode='bilinear', align_corners=False)
+        x4 = self.channel_proj(features)
+        x3 = F.interpolate(x4, scale_factor=2, mode='bilinear', align_corners=False)
+        x2 = F.interpolate(x4, scale_factor=4, mode='bilinear', align_corners=False)
+        x1 = F.interpolate(x4, scale_factor=8, mode='bilinear', align_corners=False)
         f1 = self.mmpa1(x1)
         f2 = self.mmpa2(x2)
         f3 = self.mmpa3(x3)
         f4 = self.mmpa4(x4)
-        freq = torch.fft.fft2(x)
+        x4_float = x4.float()                     # force FP32
+        with torch.cuda.amp.autocast(enabled=False):
+            freq = torch.fft.fft2(x4.float())
         freq_mag = torch.abs(freq)
+        freq_mag = torch.log1p(freq_mag)
+        # freq_mag = torch.clamp(freq_mag, 0, 1)
+        freq_mag = freq_mag / (freq_mag.amax(dim=(2,3), keepdim=True) + 1e-8)   
+        freq_mag = torch.nan_to_num(freq_mag)
+        freq_mag = freq_mag.to(x4.dtype)
+        freq_mag = self.freq_proj(freq_mag)   # ⭐ THIS LINE FIXES EVERYTHING
         fused = self.fgff(f4, freq_mag)
         d1 = self.edb1(fused)
         d2 = self.edb2(d1)
-        recon = self.rdb(d2, x)
-        return d2, recon
+        out = self.final_conv(d2)
+        out = F.interpolate(out, size=(224, 224), mode='bilinear', align_corners=False)
+        return out
