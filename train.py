@@ -187,9 +187,19 @@ def evaluate(model, loader, device):
     with torch.no_grad():
         for img, mask in loader:
             img, mask = img.to(device), mask.to(device)
+
             pred = torch.sigmoid(model(img))
-            dices.append(dice_coeff(pred, mask).item())
-            ious.append(iou_coeff(pred, mask).item())
+
+    # 🔥 FIX: resize mask to match prediction
+        if mask.shape[-1] != pred.shape[-1]:
+            mask = torch.nn.functional.interpolate(
+                mask,
+                size=pred.shape[-2:],
+                mode='nearest'
+            )
+
+        dices.append(dice_coeff(pred, mask).item())
+        ious.append(iou_coeff(pred, mask).item())
     return sum(dices)/len(dices), sum(ious)/len(ious)
 
 if __name__ == "__main__":
