@@ -89,7 +89,7 @@ class MAFFNet(nn.Module):
 
         # --- Projections
         self.channel_proj = nn.Conv2d(256, 64, 1)
-        self.freq_proj = nn.Conv2d(64, 32, 1)
+        self.freq_proj = nn.Conv2d(32, 32, 1)
 
         # --- MMPA blocks
         self.mmpa1 = MMPA(64)
