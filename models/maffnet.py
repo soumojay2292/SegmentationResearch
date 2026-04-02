@@ -1,5 +1,3 @@
-from pyexpat import features
-
 import torch
 import torch.nn as nn
 import torch.fft
@@ -11,9 +9,11 @@ class MMPA(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.proj = nn.Conv2d(in_channels, 32, kernel_size=1)
-        self.perception1 = nn.Conv2d(32, 32, kernel_size=3, padding=3, dilation=3, groups=32)
-        self.perception2 = nn.Conv2d(32, 32, kernel_size=3, padding=5, dilation=5, groups=32)
-        self.perception3 = nn.Conv2d(32, 32, kernel_size=3, padding=7, dilation=7, groups=32)
+
+        self.perception1 = nn.Conv2d(32, 32, 3, padding=3, dilation=3, groups=32)
+        self.perception2 = nn.Conv2d(32, 32, 3, padding=5, dilation=5, groups=32)
+        self.perception3 = nn.Conv2d(32, 32, 3, padding=7, dilation=7, groups=32)
+
         self.fc = nn.Sequential(
             nn.Linear(32, 16),
             nn.GELU(),
@@ -23,16 +23,20 @@ class MMPA(nn.Module):
 
     def forward(self, x):
         z = self.proj(x)
+
         e1 = self.perception1(z)
         e2 = self.perception2(z)
         e3 = self.perception3(z)
-        weights = self.fc(z.mean(dim=(2,3)))
-        w1 = weights[:,0].view(-1,1,1,1)
-        w2 = weights[:,1].view(-1,1,1,1)
-        w3 = weights[:,2].view(-1,1,1,1)
+
+        weights = self.fc(z.mean(dim=(2, 3)))
+
+        w1 = weights[:, 0].view(-1, 1, 1, 1)
+        w2 = weights[:, 1].view(-1, 1, 1, 1)
+        w3 = weights[:, 2].view(-1, 1, 1, 1)
 
         out = w1 * e1 + w2 * e2 + w3 * e3
         return out
+
 
 # --- Frequency Guided Feature Fusion ---
 class FGFF(nn.Module):
@@ -46,6 +50,7 @@ class FGFF(nn.Module):
         weight = self.gate(self.conv(fused))
         return spatial * weight + freq * (1 - weight)
 
+
 # --- Enhanced Decoder Block ---
 class EDB(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -56,64 +61,109 @@ class EDB(nn.Module):
             nn.ReLU(inplace=True),
             nn.ConvTranspose2d(out_channels, out_channels, 2, stride=2)
         )
+
     def forward(self, x):
         return self.block(x)
 
-# --- Reconstruction Decoder Block ---
+
+# --- Reconstruction Decoder Block (optional) ---
 class RDB(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.reconstruct = nn.Conv2d(in_channels, 3, kernel_size=3, padding=1)
+        self.reconstruct = nn.Conv2d(in_channels, 3, 3, padding=1)
+
     def forward(self, x, original):
-        recon = self.reconstruct(x)
-        # auxiliary reconstruction loss will be added in training loop
-        return recon
+        return self.reconstruct(x)
+
 
 # --- MAFFNet ---
 class MAFFNet(nn.Module):
     def __init__(self, encoder):
         super().__init__()
+
         self.encoder = encoder
+
+        # Freeze SAM
         for p in self.encoder.parameters():
             p.requires_grad = False
-        self.channel_proj = nn.Conv2d(256, 64, kernel_size=1)
-        self.freq_proj = nn.Conv2d(64, 32, kernel_size=1)
-        self.final_conv = nn.Conv2d(128, 1, kernel_size=1)
 
+        # --- Projections
+        self.channel_proj = nn.Conv2d(256, 64, 1)
+        self.freq_proj = nn.Conv2d(64, 32, 1)
+
+        # --- MMPA blocks
         self.mmpa1 = MMPA(64)
         self.mmpa2 = MMPA(64)
         self.mmpa3 = MMPA(64)
         self.mmpa4 = MMPA(64)
+
+        # --- Fusion
         self.fgff = FGFF(32)
+
+        # --- Decoder
         self.edb1 = EDB(32, 64)
         self.edb2 = EDB(64, 128)
-        self.rdb = RDB(128)
+
+        # --- Final output
+        self.final_conv = nn.Conv2d(128, 1, 1)
 
     def forward(self, x):
-        x_sam = F.interpolate(x, size=(1024, 1024), mode='bilinear', align_corners=False)
-        features = self.encoder.image_encoder(x_sam)
-        features = F.interpolate(features, size=(224, 224), mode='bilinear', align_corners=False)
-        x4 = self.channel_proj(features)
+        B, C, H, W = x.shape
+
+        # --- Resize input for SAM
+        print("DEBUG INPUT TO SAM:", x.shape)
+
+        x_sam = F.interpolate(x, (1024, 1024), mode='bilinear', align_corners=False)
+
+        print("DEBUG SAM SHAPE:", x_sam.shape)
+        # --- SAM Encoder
+        with torch.no_grad():
+            features = self.encoder.image_encoder(x_sam)
+        x_sam = F.interpolate(x, (1024,1024), mode='bilinear', align_corners=False)
+        # --- Channel alignment
+        x4 = self.channel_proj(features)   # [B,64,H,W]
+
+        # --- Multi-scale
         x3 = F.interpolate(x4, scale_factor=2, mode='bilinear', align_corners=False)
         x2 = F.interpolate(x4, scale_factor=4, mode='bilinear', align_corners=False)
         x1 = F.interpolate(x4, scale_factor=8, mode='bilinear', align_corners=False)
-        f1 = self.mmpa1(x1)
-        f2 = self.mmpa2(x2)
-        f3 = self.mmpa3(x3)
-        f4 = self.mmpa4(x4)
-        x4_float = x4.float()                     # force FP32
-        with torch.cuda.amp.autocast(enabled=False):
-            freq = torch.fft.fft2(x4.float())
+
+        # --- MMPA processing
+        x1 = self.mmpa1(x1)
+        x2 = self.mmpa2(x2)
+        x3 = self.mmpa3(x3)
+        x4 = self.mmpa4(x4)
+
+        # --- Align sizes
+        x1 = F.interpolate(x1, size=x4.shape[-2:], mode='bilinear')
+        x2 = F.interpolate(x2, size=x4.shape[-2:], mode='bilinear')
+        x3 = F.interpolate(x3, size=x4.shape[-2:], mode='bilinear')
+
+        # --- Spatial fusion
+        spatial = (x1 + x2 + x3 + x4) / 4
+
+        # --- FFT branch (stable)
+        freq = torch.fft.fft2(x4.float())
         freq_mag = torch.abs(freq)
+
+        # Log stabilization
         freq_mag = torch.log1p(freq_mag)
-        # freq_mag = torch.clamp(freq_mag, 0, 1)
-        freq_mag = freq_mag / (freq_mag.amax(dim=(2,3), keepdim=True) + 1e-8)   
+
+        # Safe normalization
+        freq_mag = freq_mag / (freq_mag.mean(dim=(2, 3), keepdim=True) + 1e-6)
         freq_mag = torch.nan_to_num(freq_mag)
-        freq_mag = freq_mag.to(x4.dtype)
-        freq_mag = self.freq_proj(freq_mag)   # ⭐ THIS LINE FIXES EVERYTHING
-        fused = self.fgff(f4, freq_mag)
-        d1 = self.edb1(fused)
-        d2 = self.edb2(d1)
-        out = self.final_conv(d2)
-        out = F.interpolate(out, size=(224, 224), mode='bilinear', align_corners=False)
+
+        freq_feat = self.freq_proj(freq_mag)
+
+        # --- Fusion
+        out = self.fgff(spatial, freq_feat)
+
+        # --- Decoder
+        d = self.edb1(out)
+        d = self.edb2(d)
+
+        # --- Output
+        out = self.final_conv(d)
+        out = F.interpolate(out, (224, 224), mode='bilinear')
+
         return out
