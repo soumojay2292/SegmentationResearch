@@ -122,7 +122,7 @@ def main(model_name, dataset_name):
 
     scaler = GradScaler("cuda")
     # Training loop
-    num_epochs = 15
+    num_epochs = 50
     global_step = 0
     for epoch in range(num_epochs):
         print(f"Epoch {epoch+1}/{num_epochs} started...")   
