@@ -56,14 +56,14 @@ def run_all():
             train_csv,
             f"{base_path}/train/images",
             f"{base_path}/train/masks",
-            image_size=64
+            image_size=224
         )
 
         val_ds = SegDataset(
             val_csv,
             f"{base_path}/val/images",
             f"{base_path}/val/masks",
-            image_size=64
+            image_size=224
         )
 
 

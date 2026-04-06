@@ -1,169 +1,194 @@
 import torch
 import torch.nn as nn
-import torch.fft
 import torch.nn.functional as F
 
-
-# --- Mixed Multi-scale Perception Adaptor ---
+# ------------------------------
+# MMPA (Paper-aligned simplified)
+# ------------------------------
 class MMPA(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
-        self.proj = nn.Conv2d(in_channels, 32, kernel_size=1)
 
-        self.perception1 = nn.Conv2d(32, 32, 3, padding=3, dilation=3, groups=32)
-        self.perception2 = nn.Conv2d(32, 32, 3, padding=5, dilation=5, groups=32)
-        self.perception3 = nn.Conv2d(32, 32, 3, padding=7, dilation=7, groups=32)
+        self.proj = nn.Conv2d(in_channels, 32, 1)
+
+        self.e1 = nn.Conv2d(32, 32, 3, padding=3, dilation=3, groups=32)
+        self.e2 = nn.Conv2d(32, 32, 3, padding=5, dilation=5, groups=32)
+        self.e3 = nn.Conv2d(32, 32, 3, padding=7, dilation=7, groups=32)
 
         self.fc = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
             nn.Linear(32, 16),
             nn.GELU(),
             nn.Linear(16, 3),
             nn.Softmax(dim=-1)
         )
 
+        self.reproj = nn.Conv2d(32, in_channels, 1)
+
     def forward(self, x):
         z = self.proj(x)
 
-        e1 = self.perception1(z)
-        e2 = self.perception2(z)
-        e3 = self.perception3(z)
+        e1 = self.e1(z)
+        e2 = self.e2(z)
+        e3 = self.e3(z)
 
-        weights = self.fc(z.mean(dim=(2, 3)))
+        weights = self.fc(z)
 
         w1 = weights[:, 0].view(-1, 1, 1, 1)
         w2 = weights[:, 1].view(-1, 1, 1, 1)
         w3 = weights[:, 2].view(-1, 1, 1, 1)
 
-        out = w1 * e1 + w2 * e2 + w3 * e3
-        return out
+        fused = w1 * e1 + w2 * e2 + w3 * e3
+
+        return self.reproj(fused + z)
 
 
-# --- Frequency Guided Feature Fusion ---
-class FGFF(nn.Module):
-    def __init__(self, in_channels):
+# ------------------------------
+# Frequency Encoder (Paper aligned)
+# ------------------------------
+class FrequencyEncoder(nn.Module):
+    def __init__(self):
         super().__init__()
-        self.conv = nn.Conv2d(in_channels * 2, in_channels, 1)
-        self.gate = nn.Sigmoid()
+        self.conv = nn.Conv2d(3, 32, 3, padding=1)
+
+    def forward(self, x):
+        # grayscale
+        x_gray = x.mean(dim=1, keepdim=True)
+
+        # FFT
+        freq = torch.fft.fft2(x_gray.float())
+        mag = torch.abs(freq)
+
+        # stabilization
+        mag = torch.log1p(mag)
+        mag = mag / (mag.mean(dim=(2, 3), keepdim=True) + 1e-6)
+        mag = torch.nan_to_num(mag)
+
+        # replicate channels
+        mag = mag.repeat(1, 3, 1, 1)
+
+        return self.conv(mag)
+
+
+# ------------------------------
+# FGFF (Paper-style attention fusion)
+# ------------------------------
+class FGFF(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+
+        self.spatial_conv = nn.Conv2d(channels, channels, 3, padding=1)
+
+        self.attn = nn.Sequential(
+            nn.Conv2d(2, channels, 3, padding=1),
+            nn.Sigmoid()
+        )
 
     def forward(self, spatial, freq):
-        fused = torch.cat([spatial, freq], dim=1)
-        weight = self.gate(self.conv(fused))
-        return spatial * weight + freq * (1 - weight)
+
+        spatial_feat = self.spatial_conv(spatial)
+
+        avg = torch.mean(freq, dim=1, keepdim=True)
+        mx, _ = torch.max(freq, dim=1, keepdim=True)
+
+        attn = self.attn(torch.cat([avg, mx], dim=1))
+
+        return spatial_feat * attn
 
 
-# --- Enhanced Decoder Block ---
-class EDB(nn.Module):
-    def __init__(self, in_channels, out_channels):
+# ------------------------------
+# Decoder Block
+# ------------------------------
+class DecoderBlock(nn.Module):
+    def __init__(self, in_ch, out_ch):
         super().__init__()
-        self.block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(out_channels, out_channels, 2, stride=2)
+
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_ch, out_ch, 3, padding=1),
+            nn.BatchNorm2d(out_ch),
+            nn.ReLU(inplace=True)
         )
 
     def forward(self, x):
-        return self.block(x)
+        x = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
+        return self.conv(x)
 
 
-# --- Reconstruction Decoder Block (optional) ---
-class RDB(nn.Module):
-    def __init__(self, in_channels):
-        super().__init__()
-        self.reconstruct = nn.Conv2d(in_channels, 3, 3, padding=1)
-
-    def forward(self, x, original):
-        return self.reconstruct(x)
-
-
-# --- MAFFNet ---
+# ------------------------------
+# MAFFNet FINAL
+# ------------------------------
 class MAFFNet(nn.Module):
     def __init__(self, encoder):
         super().__init__()
 
         self.encoder = encoder
 
-        # Freeze SAM
+        # freeze SAM
         for p in self.encoder.parameters():
             p.requires_grad = False
 
-        # --- Projections
+        # channel alignment (SAM → 256 assumed)
         self.channel_proj = nn.Conv2d(256, 64, 1)
-        self.freq_proj = nn.Conv2d(32, 32, 1)
 
-        # --- MMPA blocks
-        self.mmpa1 = MMPA(64)
-        self.mmpa2 = MMPA(64)
-        self.mmpa3 = MMPA(64)
-        self.mmpa4 = MMPA(64)
+        # modules
+        self.mmpa = MMPA(64)
+        self.freq_enc = FrequencyEncoder()
+        self.fgff = FGFF(64)
 
-        # --- Fusion
-        self.fgff = FGFF(32)
+        # decoder
+        self.dec1 = DecoderBlock(64, 64)
+        self.dec2 = DecoderBlock(64, 32)
+        self.dec3 = DecoderBlock(32, 16)
 
-        # --- Decoder
-        self.edb1 = EDB(32, 64)
-        self.edb2 = EDB(64, 128)
-
-        # --- Final output
-        self.final_conv = nn.Conv2d(128, 1, 1)
+        self.final_conv = nn.Conv2d(16, 1, 1)
 
     def forward(self, x):
-        B, C, H, W = x.shape
 
-        # --- Resize input for SAM
-        print("DEBUG INPUT TO SAM:", x.shape)
-
+        # --------------------------
+        # STEP 1: SAM input
+        # --------------------------
         x_sam = F.interpolate(x, (1024, 1024), mode='bilinear', align_corners=False)
 
-        print("DEBUG SAM SHAPE:", x_sam.shape)
-        # --- SAM Encoder
         with torch.no_grad():
             features = self.encoder.image_encoder(x_sam)
-        x_sam = F.interpolate(x, (1024,1024), mode='bilinear', align_corners=False)
-        # --- Channel alignment
-        x4 = self.channel_proj(features)   # [B,64,H,W]
 
-        # --- Multi-scale
-        x3 = F.interpolate(x4, scale_factor=2, mode='bilinear', align_corners=False)
-        x2 = F.interpolate(x4, scale_factor=4, mode='bilinear', align_corners=False)
-        x1 = F.interpolate(x4, scale_factor=8, mode='bilinear', align_corners=False)
+        # --------------------------
+        # STEP 2: resize back
+        # --------------------------
+        features = F.interpolate(features, (224, 224), mode='bilinear', align_corners=False)
 
-        # --- MMPA processing
-        x1 = self.mmpa1(x1)
-        x2 = self.mmpa2(x2)
-        x3 = self.mmpa3(x3)
-        x4 = self.mmpa4(x4)
+        x_spatial = self.channel_proj(features)
 
-        # --- Align sizes
-        x1 = F.interpolate(x1, size=x4.shape[-2:], mode='bilinear')
-        x2 = F.interpolate(x2, size=x4.shape[-2:], mode='bilinear')
-        x3 = F.interpolate(x3, size=x4.shape[-2:], mode='bilinear')
+        # --------------------------
+        # STEP 3: MMPA
+        # --------------------------
+        x_spatial = self.mmpa(x_spatial)
 
-        # --- Spatial fusion
-        spatial = (x1 + x2 + x3 + x4) / 4
+        # --------------------------
+        # STEP 4: Frequency branch
+        # --------------------------
+        x_freq = self.freq_enc(x)
 
-        # --- FFT branch (stable)
-        freq = torch.fft.fft2(x4.float())
-        freq_mag = torch.abs(freq)
+        x_freq = F.interpolate(x_freq, size=x_spatial.shape[-2:], mode='bilinear')
 
-        # Log stabilization
-        freq_mag = torch.log1p(freq_mag)
+        # --------------------------
+        # STEP 5: FGFF fusion
+        # --------------------------
+        x_fused = self.fgff(x_spatial, x_freq)
 
-        # Safe normalization
-        freq_mag = freq_mag / (freq_mag.mean(dim=(2, 3), keepdim=True) + 1e-6)
-        freq_mag = torch.nan_to_num(freq_mag)
+        # --------------------------
+        # STEP 6: Decoder
+        # --------------------------
+        d1 = self.dec1(x_fused)
+        d2 = self.dec2(d1)
+        d3 = self.dec3(d2)
 
-        freq_feat = self.freq_proj(freq_mag)
+        out = self.final_conv(d3)
 
-        # --- Fusion
-        out = self.fgff(spatial, freq_feat)
-
-        # --- Decoder
-        d = self.edb1(out)
-        d = self.edb2(d)
-
-        # --- Output
-        out = self.final_conv(d)
-        out = F.interpolate(out, (224, 224), mode='bilinear')
+        # --------------------------
+        # FINAL OUTPUT
+        # --------------------------
+        out = F.interpolate(out, size=(224, 224), mode='bilinear')
 
         return out
