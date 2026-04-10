@@ -18,6 +18,6 @@ def generate_csv(dataset="ISIC_2016", split="train"):
     print(f"✅ Generated {csv_path} with {len(rows)} valid samples")
 
 if __name__ == "__main__":
-    for ds in ["ISIC_2016", "ISIC_2017", "ISIC_2018"]:
+    for ds in ["ISIC_2016", "ISIC_2018"]:
         for split in ["train", "val", "test"]:
             generate_csv(ds, split)

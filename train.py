@@ -161,7 +161,7 @@ def main(model_name, dataset_name):
 
     scaler = GradScaler("cuda")
 
-    num_epochs = 10
+    num_epochs = 50
     global_step = 0
 
     # -------------------------
