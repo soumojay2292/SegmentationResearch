@@ -1,0 +1,139 @@
+
+<html>
+<head>
+<title>MAFFNet Dashboard</title>
+
+<style>
+body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0f172a;
+    color: white;
+    margin: 20px;
+}
+
+h1 {
+    color: #38bdf8;
+}
+
+.card {
+    background: #1e293b;
+    padding: 15px;
+    border-radius: 12px;
+    margin-bottom: 15px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+}
+
+.metric {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.good { color: #22c55e; }
+.mid { color: #facc15; }
+.bad { color: #ef4444; }
+
+.bar {
+    height: 10px;
+    border-radius: 5px;
+    background: #334155;
+    margin-top: 5px;
+}
+
+.fill {
+    height: 100%;
+    border-radius: 5px;
+}
+
+.green { background: #22c55e; }
+.orange { background: #f97316; }
+.red { background: #ef4444; }
+
+img {
+    width: 100%;
+    border-radius: 10px;
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>MAFFNet Result Dashboard</h1>
+
+<div class="grid">
+
+<div class="card">
+<h3>Validation Dice</h3>
+<div class="metric mid">0.501</div>
+<div class="bar"><div class="fill green" style="width:50.066232981860004%"></div></div>
+</div>
+
+<div class="card">
+<h3>Test Dice</h3>
+<div class="metric bad">0.485</div>
+<div class="bar"><div class="fill orange" style="width:48.487913867040554%"></div></div>
+</div>
+
+<div class="card">
+<h3>IoU</h3>
+<div class="metric mid">0.332</div>
+<div class="bar"><div class="fill green" style="width:33.18677659203507%"></div></div>
+</div>
+
+</div>
+
+<div class="card">
+<h3>Pipeline</h3>
+<p>Input → SAM → MMPA → FFT → FGFF → Decoder</p>
+</div>
+
+<div class="grid">
+
+<div class="card">
+<h3>Model Info</h3>
+<p>Total Params: 641212084</p>
+<p>Trainable: 121476</p>
+</div>
+
+<div class="card">
+<h3>Training</h3>
+<p>Epochs: 20</p>
+<p>Batch: 2</p>
+<p>LR: 0.0001</p>
+</div>
+
+<div class="card">
+<h3>Status</h3>
+<p class="good">✔ Model learning</p>
+<p class="mid">⚠ Unstable training</p>
+<p class="bad">✖ Generalization gap</p>
+</div>
+
+</div>
+
+<div class="card">
+<h3>Visual Results</h3>
+<div class="grid">
+    <img src="input.png">
+    <img src="gt.png">
+    <img src="pred.png">
+</div>
+</div>
+
+<div class="card">
+<h3>Key Insights</h3>
+<ul>
+<li>✔ Model captures lesion structure</li>
+<li>✔ Frequency fusion improves edges</li>
+<li>⚠ Training instability observed</li>
+<li>⚠ Val > Test gap indicates overfitting</li>
+</ul>
+</div>
+
+</body>
+</html>

@@ -1,21 +1,17 @@
-import argparse, torch
+import argparse, torch, os
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 from datasets.seg_dataset import SegDataset
 from models.unet import UNet
 from models.maffnet import MAFFNet
-from training.trainer import Trainer
+from models.transunet import TransUNet
 from utils.metrics import dice_coeff, iou_coeff
-import torchvision.utils as vutils
 from torch.utils.tensorboard import SummaryWriter
 from segment_anything import sam_model_registry
 from torch.amp import autocast, GradScaler
-import os
 import torch.nn as nn
+import torchvision.utils as vutils
 from tqdm import tqdm
-
-from models.transunet import TransUNet
-
 
 # -------------------------
 # Loss
@@ -33,31 +29,21 @@ class ComboLoss(nn.Module):
         union = pred.sum(dim=(2,3)) + target.sum(dim=(2,3))
 
         dice = 1 - ((2 * intersection + 1e-8) / (union + 1e-8))
-        dice = dice.mean()
-
-        return bce + dice
-
+        return bce + dice.mean()
 
 criterion = ComboLoss()
 
-# Fix OpenMP issue
+# Fix OpenMP
 torch.backends.cudnn.benchmark = True
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-print("OpenMP duplicate runtime fix applied (KMP_DUPLICATE_LIB_OK=TRUE)")
-
 
 # -------------------------
-# TensorBoard logging
+# TensorBoard Images
 # -------------------------
-def log_segmentation_images(writer, inputs, masks, preds, step: int):
-    input_grid = vutils.make_grid(inputs, normalize=True, scale_each=True)
-    mask_grid = vutils.make_grid(masks.float(), normalize=True, scale_each=True)
-    pred_grid = vutils.make_grid(preds.float(), normalize=True, scale_each=True)
-
-    writer.add_image("Inputs", input_grid, global_step=step)
-    writer.add_image("GroundTruth", mask_grid, global_step=step)
-    writer.add_image("Predictions", pred_grid, global_step=step)
-
+def log_segmentation_images(writer, inputs, masks, preds, step):
+    writer.add_image("Inputs", vutils.make_grid(inputs, normalize=True), step)
+    writer.add_image("GT", vutils.make_grid(masks.float(), normalize=True), step)
+    writer.add_image("Pred", vutils.make_grid(preds.float(), normalize=True), step)
 
 # -------------------------
 # Evaluation
@@ -66,20 +52,16 @@ def evaluate(model, loader, device):
     model.eval()
     dices, ious = [], []
 
-    loop = tqdm(loader, desc="Evaluating", leave=False)
+    sample_images, sample_masks, sample_preds = None, None, None
 
     with torch.no_grad():
-        for img, mask in loop:
-            img, mask = img.to(device), mask.to(device)
+        for i, (img, mask) in enumerate(loader):
 
+            img, mask = img.to(device), mask.to(device)
             pred = torch.sigmoid(model(img))
 
             if mask.shape[-1] != pred.shape[-1]:
-                mask = torch.nn.functional.interpolate(
-                    mask,
-                    size=pred.shape[-2:],
-                    mode='nearest'
-                )
+                mask = torch.nn.functional.interpolate(mask, size=pred.shape[-2:], mode='nearest')
 
             dice = dice_coeff(pred, mask).item()
             iou = iou_coeff(pred, mask).item()
@@ -87,161 +69,151 @@ def evaluate(model, loader, device):
             dices.append(dice)
             ious.append(iou)
 
-            loop.set_postfix({
-                "dice": f"{dice:.4f}",
-                "iou": f"{iou:.4f}"
-            })
+            if i == 0:
+                sample_images = img.cpu()
+                sample_masks = mask.cpu()
+                sample_preds = (pred > 0.5).float().cpu()
 
-    return sum(dices)/len(dices), sum(ious)/len(ious)
-
+    return (
+        sum(dices)/len(dices),
+        sum(ious)/len(ious),
+        sample_images,
+        sample_masks,
+        sample_preds
+    )
 
 # -------------------------
 # Main
 # -------------------------
 def main(model_name, dataset_name):
 
-    print(f"Starting training with {model_name} on dataset {dataset_name}...")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    base = f"dataset_split/{dataset_name}"
 
-    base_path = f"dataset_split/{dataset_name}"
+    train_ds = SegDataset(f"{base}/train.csv", f"{base}/train/images", f"{base}/train/masks", 224)
+    val_ds   = SegDataset(f"{base}/val.csv", f"{base}/val/images", f"{base}/val/masks", 224)
+    test_ds  = SegDataset(f"{base}/test.csv", f"{base}/test/images", f"{base}/test/masks", 224)
 
-    train_ds = SegDataset(
-        f"{base_path}/train.csv",
-        f"{base_path}/train/images",
-        f"{base_path}/train/masks",
-        image_size=1024
-    )
+    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=2)
+    val_loader   = DataLoader(val_ds, batch_size=2)
+    test_loader  = DataLoader(test_ds, batch_size=2)
 
-    val_ds = SegDataset(
-        f"{base_path}/val.csv",
-        f"{base_path}/val/images",
-        f"{base_path}/val/masks",
-        image_size=1024
-    )
+    writer = SummaryWriter(f"runs/{model_name}_{dataset_name}")
 
-    test_ds = SegDataset(
-        f"{base_path}/test.csv",
-        f"{base_path}/test/images",
-        f"{base_path}/test/masks",
-        image_size=1024
-    )
-
-    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader   = DataLoader(val_ds, batch_size=2, shuffle=False, num_workers=4, pin_memory=True)
-    test_loader  = DataLoader(test_ds, batch_size=2, shuffle=False, num_workers=4, pin_memory=True)
-
-    writer = SummaryWriter(log_dir=f"runs/{model_name}_{dataset_name}")
-
-    # Model selection
+    # Model
     if model_name == "unet":
         model = UNet()
     elif model_name == "maffnet":
-        sam_encoder = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
-        model = MAFFNet(encoder=sam_encoder)
+        sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
+        model = MAFFNet(encoder=sam)
     elif model_name == "transunet":
         model = TransUNet(in_ch=3, out_ch=1, embed_dim=64, num_heads=2)
-    else:
-        raise ValueError("Unknown model")
 
-    optimizer = Adam(model.parameters(), lr=1e-4)
-    trainer = Trainer(model, optimizer, device)
     model = model.to(device)
 
-    print(f"Using device: {device}")
-    if device == "cuda":
-        print(f"GPU name: {torch.cuda.get_device_name(0)}")
+    optimizer = Adam(model.parameters(), lr=1e-4)
+    scaler = GradScaler()
 
-    print(next(model.parameters()).device)
-
-    model.eval()
-    with torch.no_grad():
-        test_out = model(torch.randn(1, 3, 224, 224).to(device))
-        print("Model output shape:", test_out.shape)
-
-    scaler = GradScaler("cuda")
-
-    num_epochs = 50
-    global_step = 0
+    num_epochs = 20
+    step = 0
 
     # -------------------------
-    # Training Loop
+    # Training
     # -------------------------
     for epoch in range(num_epochs):
 
         print(f"\nEpoch {epoch+1}/{num_epochs}")
         model.train()
 
-        loop = tqdm(train_loader, desc=f"Training", leave=False)
+        loop = tqdm(train_loader)
 
         for i, (images, labels) in enumerate(loop):
 
             images, labels = images.to(device), labels.to(device)
-
             optimizer.zero_grad()
 
             with autocast("cuda"):
                 outputs = model(images)
 
                 if labels.shape[-1] != outputs.shape[-1]:
-                    labels = torch.nn.functional.interpolate(
-                        labels,
-                        size=outputs.shape[-2:],
-                        mode='nearest'
-                    )
+                    labels = torch.nn.functional.interpolate(labels, size=outputs.shape[-2:], mode='nearest')
 
                 loss = criterion(outputs, labels)
 
             scaler.scale(loss).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
 
             preds = (torch.sigmoid(outputs) > 0.5).float()
 
-            # Metrics
             dice = dice_coeff(preds, labels).item()
             iou = iou_coeff(preds, labels).item()
 
-            loop.set_postfix({
-                "loss": f"{loss.item():.4f}",
-                "dice": f"{dice:.4f}",
-                "iou": f"{iou:.4f}"
-            })
+            loop.set_postfix(loss=loss.item(), dice=dice, iou=iou)
 
-            writer.add_scalar("Loss/train", loss.item(), global_step)
+            writer.add_scalar("Loss/train", loss.item(), step)
 
             if i % 100 == 0:
-                log_segmentation_images(
-                    writer,
-                    images.cpu(),
-                    labels.cpu(),
-                    preds.cpu(),
-                    step=global_step
-                )
+                log_segmentation_images(writer, images.cpu(), labels.cpu(), preds.cpu(), step)
 
-            global_step += 1
+            step += 1
 
-        # Validation
-        val_dice, val_iou = evaluate(model, val_loader, device)
+        val_dice, val_iou, _, _, _ = evaluate(model, val_loader, device)
 
         writer.add_scalar("Dice/val", val_dice, epoch)
         writer.add_scalar("IoU/val", val_iou, epoch)
 
-        print(f"Epoch {epoch+1}: Val Dice={val_dice:.4f}, Val IoU={val_iou:.4f}")
+        print(f"Val Dice={val_dice:.4f}")
 
+    # -------------------------
     # Test
-    test_dice, test_iou = evaluate(model, test_loader, device)
+    # -------------------------
+    test_dice, test_iou, imgs, gts, preds = evaluate(model, test_loader, device)
 
-    print(f"\nFinal Test Dice={test_dice:.4f}, Test IoU={test_iou:.4f}")
+    print(f"\nTest Dice={test_dice:.4f}, IoU={test_iou:.4f}")
 
-    writer.add_scalar("Dice/test", test_dice, num_epochs)
-    writer.add_scalar("IoU/test", test_iou, num_epochs)
+    # -------------------------
+    # Save dashboard images
+    # -------------------------
+    os.makedirs("results/dashboard", exist_ok=True)
+
+    vutils.save_image(imgs[0], "results/dashboard/input.png")
+    vutils.save_image(gts[0], "results/dashboard/gt.png")
+    vutils.save_image(preds[0], "results/dashboard/pred.png")
+
+    # -------------------------
+    # Params
+    # -------------------------
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    # -------------------------
+    # Dashboard
+    # -------------------------
+    from utils.report_generator import generate_report
+
+    generate_report(
+        metrics={"val_dice": val_dice, "test_dice": test_dice, "iou": test_iou},
+        config={
+            "dataset": dataset_name,
+            "epochs": num_epochs,
+            "batch_size": 2,
+            "lr": 1e-4,
+            "total_params": total_params,
+            "trainable_params": trainable_params
+        },
+        image_paths={
+            "input": "input.png",
+            "gt": "gt.png",
+            "pred": "pred.png"
+        }
+    )
 
     torch.save(model.state_dict(), f"final_{model_name}_{dataset_name}.pth")
 
     writer.close()
-
 
 # -------------------------
 # Entry
