@@ -35,18 +35,35 @@ PyYAML==6.0.3
 packaging==26.0
 
 # -------------------------
+# SAM / SAM2 dependencies
+# -------------------------
+hydra-core==1.3.2
+omegaconf==2.3.0
+iopath==0.1.10
+
+# 🔥 NEW (IMPORTANT – fixes your error)
+tensordict
+einops
+timm
+
+# -------------------------
 # Hugging Face
 # -------------------------
 datasets
 huggingface_hub
 
 # -------------------------
-# SAM (installed via git)
+# SAM (original)
 # -------------------------
 git+https://github.com/facebookresearch/segment-anything.git
 
 # -------------------------
-# Misc (keep from your file)
+# SAM2 (OPTIONAL via pip, you are using local clone)
+# -------------------------
+# git+https://github.com/facebookresearch/segment-anything-2.git
+
+# -------------------------
+# Misc
 # -------------------------
 absl-py==2.4.0
 colorama==0.4.6

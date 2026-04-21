@@ -1,163 +1,362 @@
+"""
+Trainer for MAFFNet skin lesion segmentation.
+
+Loss  : Dice + BCEWithLogits on p1–p4  +  λ·MSE(rec, input)
+Optim : AdamW, lr=1e-3, wd=0.01
+Sched : Linear LR decay over 100 epochs
+AMP   : enabled (GradScaler)
+
+Metrics: acc, dice, mIoU, sensitivity, specificity, F1
+"""
+
 import os
+import time
+import csv
+from pathlib import Path
+from typing import Dict, Tuple, Optional
+
 import torch
-import torchvision
-from torch.cuda.amp import autocast, GradScaler
-from torch.utils.tensorboard import SummaryWriter
+import torch.nn as nn
 import torch.nn.functional as F
+from torch.cuda.amp import GradScaler, autocast
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import LinearLR
+from torch.utils.data import DataLoader
 
 
-class Trainer:
-    def __init__(self, model, optimizer, device, scheduler=None, checkpoint_path=None, loss_fn=None):
-        self.model = model.to(device)
-        self.optimizer = optimizer
-        self.device = device
-        self.scheduler = scheduler
+# ---------------------------------------------------------------------------
+# Loss functions
+# ---------------------------------------------------------------------------
 
-        # ✅ Default loss: BCE + Dice
-        self.bce = torch.nn.BCEWithLogitsLoss()
-        self.loss_fn = loss_fn if loss_fn is not None else self._combined_loss
+class DiceLoss(nn.Module):
+    def __init__(self, smooth: float = 1.0):
+        super().__init__()
+        self.smooth = smooth
 
-        # ✅ AMP scaler
-        self.scaler = GradScaler()
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        probs = torch.sigmoid(logits)
+        flat_p = probs.flatten(1)
+        flat_t = targets.flatten(1)
+        inter  = (flat_p * flat_t).sum(1)
+        return 1.0 - (2.0 * inter + self.smooth) / (
+            flat_p.sum(1) + flat_t.sum(1) + self.smooth
+        ).mean()
 
-        # ✅ TensorBoard writer
-        self.writer = SummaryWriter(log_dir="runs/segmentation_experiment")
 
-        self.global_step = 0
-        self.epoch = 0
+class MAFFNetLoss(nn.Module):
+    """
+    total = mean(dice + bce) over p1–p4   +   λ · mse(rec, img)
+    λ = 0.1 by default (ablation in paper uses λ ∈ {0.05, 0.1, 0.2})
+    """
+    def __init__(self, rec_lambda: float = 0.1):
+        super().__init__()
+        self.dice = DiceLoss()
+        self.bce  = nn.BCEWithLogitsLoss()
+        self.mse  = nn.MSELoss()
+        self.lam  = rec_lambda
 
-        # ✅ Resume training if checkpoint exists
-        if checkpoint_path and os.path.exists(checkpoint_path):
-            print(f"Loading checkpoint from {checkpoint_path}")
-            self.model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    def forward(
+        self,
+        preds: Tuple[torch.Tensor, ...],   # (p1,p2,p3,p4,rec)
+        mask:  torch.Tensor,               # (B,1,H,W) float in [0,1]
+        img:   torch.Tensor,               # (B,3,H,W)  original image
+    ) -> Tuple[torch.Tensor, Dict[str, float]]:
+        p1, p2, p3, p4, rec = preds
 
-    # ---------------- Metrics ----------------
-    def dice_coeff(self, pred, target, eps=1e-6):
-        pred = torch.sigmoid(pred)
-        pred = (pred > 0.5).float()
-        intersection = (pred * target).sum()
-        union = pred.sum() + target.sum()
-        return (2. * intersection + eps) / (union + eps)
+        seg_loss = 0.0
+        for p in (p1, p2, p3, p4):
+            seg_loss = seg_loss + self.dice(p, mask) + self.bce(p, mask)
+        seg_loss = seg_loss / 4.0
 
-    def iou_coeff(self, pred, target, eps=1e-6):
-        pred = torch.sigmoid(pred)
-        pred = (pred > 0.5).float()
-        intersection = (pred * target).sum()
-        union = pred.sum() + target.sum() - intersection
-        return (intersection + eps) / (union + eps)
+        # Normalise input image to [-1,1] to match RDB Tanh output
+        img_norm = img * 2.0 - 1.0
+        rec_loss = self.mse(rec, img_norm)
 
-    # ---------------- Loss ----------------
-    def _combined_loss(self, pred, target):
-        dice = self.dice_coeff(pred, target)
-        return self.bce(pred, target) + (1 - dice)
+        total = seg_loss + self.lam * rec_loss
+        return total, {
+            "seg_loss": seg_loss.item(),
+            "rec_loss": rec_loss.item(),
+        }
 
-    # ---------------- Training ----------------
-    def train_epoch(self, loader):
+
+# ---------------------------------------------------------------------------
+# Metrics
+# ---------------------------------------------------------------------------
+
+@torch.no_grad()
+def compute_metrics(logits: torch.Tensor, masks: torch.Tensor, thresh: float = 0.5) -> Dict[str, float]:
+    """
+    logits: (B,1,H,W)  masks: (B,1,H,W) float in [0,1]
+    Returns: acc, dice, mIoU, sensitivity, specificity, f1
+    """
+    probs = torch.sigmoid(logits)
+    pred  = (probs > thresh).float()
+    tgt   = masks
+
+    TP = (pred * tgt).sum().item()
+    FP = (pred * (1 - tgt)).sum().item()
+    TN = ((1 - pred) * (1 - tgt)).sum().item()
+    FN = ((1 - pred) * tgt).sum().item()
+
+    eps = 1e-8
+    acc         = (TP + TN) / (TP + FP + TN + FN + eps)
+    dice        = 2 * TP / (2 * TP + FP + FN + eps)
+    iou         = TP / (TP + FP + FN + eps)
+    sensitivity = TP / (TP + FN + eps)
+    specificity = TN / (TN + FP + eps)
+    f1          = 2 * TP / (2 * TP + FP + FN + eps)   # same as dice for binary
+
+    return {
+        "acc":         acc,
+        "dice":        dice,
+        "mIoU":        iou,
+        "sensitivity": sensitivity,
+        "specificity": specificity,
+        "f1":          f1,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Trainer
+# ---------------------------------------------------------------------------
+
+class MAFFNetTrainer:
+    def __init__(
+        self,
+        model: nn.Module,
+        train_loader: DataLoader,
+        val_loader:   DataLoader,
+        save_dir:     str  = "checkpoints",
+        num_epochs:   int  = 100,
+        lr:           float = 1e-3,
+        weight_decay: float = 0.01,
+        rec_lambda:   float = 0.1,
+        device:       Optional[torch.device] = None,
+    ):
+        self.model       = model
+        self.train_loader = train_loader
+        self.val_loader   = val_loader
+        self.num_epochs   = num_epochs
+        self.save_dir     = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+
+        self.device = device or (
+            torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+        )
+        self.model = self.model.to(self.device)
+
+        # Trainable params only (backbone is frozen)
+        trainable = [p for p in model.parameters() if p.requires_grad]
+        self.optim = AdamW(trainable, lr=lr, weight_decay=weight_decay)
+
+        # Linear decay: lr → 0 over num_epochs
+        self.scheduler = LinearLR(
+            self.optim,
+            start_factor=1.0,
+            end_factor=0.0,
+            total_iters=num_epochs,
+        )
+
+        self.criterion = MAFFNetLoss(rec_lambda=rec_lambda).to(self.device)
+        self.scaler    = GradScaler()
+
+        self.best_dice = 0.0
+        self._csv_path = self.save_dir / "training_log.csv"
+        self._init_csv()
+
+    # ------------------------------------------------------------------
+    # CSV logging
+    # ------------------------------------------------------------------
+    def _init_csv(self):
+        with open(self._csv_path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow([
+                "epoch", "lr",
+                "train_loss", "train_seg_loss", "train_rec_loss",
+                "val_loss", "val_dice", "val_miou",
+                "val_acc", "val_sensitivity", "val_specificity", "val_f1",
+            ])
+
+    def _log_csv(self, row: list):
+        with open(self._csv_path, "a", newline="") as f:
+            csv.writer(f).writerow(row)
+
+    # ------------------------------------------------------------------
+    # Train one epoch
+    # ------------------------------------------------------------------
+    def _train_epoch(self, epoch: int) -> Dict[str, float]:
         self.model.train()
-        total_loss = 0.0
-        
+        total_loss = seg_loss_sum = rec_loss_sum = 0.0
+        n = 0
 
-        for img, mask in loader:
-            img, mask = img.to(self.device), mask.to(self.device)
-            self.optimizer.zero_grad()
+        for imgs, masks in self.train_loader:
+            imgs  = imgs.to(self.device)
+            masks = masks.to(self.device).float()
+            if masks.ndim == 3:
+                masks = masks.unsqueeze(1)
 
-            # ✅ Mixed precision forward
+            self.optim.zero_grad(set_to_none=True)
+
             with autocast():
-                output = self.model(img)
-                if output.shape[-2:] != mask.shape[-2:]:
-                    output = F.interpolate(output, size=mask.shape[-2:], mode="bilinear", align_corners=False)
+                preds = self.model(imgs)
+                loss, sub = self.criterion(preds, masks, imgs)
 
-                loss = self.loss_fn(output, mask)
-
-            # ✅ Scaled backward
             self.scaler.scale(loss).backward()
-            self.scaler.step(self.optimizer)
+            self.scaler.unscale_(self.optim)
+            nn.utils.clip_grad_norm_(
+                [p for p in self.model.parameters() if p.requires_grad], 1.0
+            )
+            self.scaler.step(self.optim)
             self.scaler.update()
 
-            total_loss += loss.item()
+            bs = imgs.size(0)
+            total_loss   += loss.item() * bs
+            seg_loss_sum += sub["seg_loss"] * bs
+            rec_loss_sum += sub["rec_loss"] * bs
+            n += bs
 
-            # Logging
-            self.writer.add_scalar("Loss/train", loss.item(), self.global_step)
-            self.global_step += 1
+        return {
+            "loss":     total_loss   / n,
+            "seg_loss": seg_loss_sum / n,
+            "rec_loss": rec_loss_sum / n,
+        }
 
-        avg_loss = total_loss / len(loader)
-        self.writer.add_scalar("Loss/train_epoch", avg_loss, self.epoch)
-        return avg_loss
-
-    # ---------------- Evaluation ----------------
-    def evaluate_epoch(self, loader):
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def _val_epoch(self) -> Tuple[float, Dict[str, float]]:
         self.model.eval()
-        running_loss, dice_score, iou_score = 0.0, 0.0, 0.0
+        total_loss = 0.0
+        metric_sums: Dict[str, float] = {
+            k: 0.0 for k in ("acc", "dice", "mIoU", "sensitivity", "specificity", "f1")
+        }
+        n = 0
 
-        with torch.no_grad():
-            for img, mask in loader:
-                img, mask = img.to(self.device), mask.to(self.device)
-                output = self.model(img)
+        for imgs, masks in self.val_loader:
+            imgs  = imgs.to(self.device)
+            masks = masks.to(self.device).float()
+            if masks.ndim == 3:
+                masks = masks.unsqueeze(1)
 
-                # ✅ Ensure prediction and mask sizes match
-                if output.shape[-2:] != mask.shape[-2:]:
-                    output = F.interpolate(output, size=mask.shape[-2:], mode="bilinear", align_corners=False)
+            with autocast():
+                preds = self.model(imgs)
+                loss, _ = self.criterion(preds, masks, imgs)
 
-                loss = self.loss_fn(output, mask)
+            bs = imgs.size(0)
+            total_loss += loss.item() * bs
+            n += bs
 
-                running_loss += loss.item()
-                dice_score += self.dice_coeff(output, mask).item()
-                iou_score += self.iou_coeff(output, mask).item()
+            # Use p1 (finest prediction) for metrics
+            m = compute_metrics(preds[0], masks)
+            for k, v in m.items():
+                metric_sums[k] += v * bs
 
-            # Log predictions from last batch
-            self.log_predictions(img.detach().cpu(), mask.detach().cpu(), output.detach().cpu(), self.epoch)
+        avg_metrics = {k: v / n for k, v in metric_sums.items()}
+        return total_loss / n, avg_metrics
 
-        avg_loss = running_loss / len(loader)
-        avg_dice = dice_score / len(loader)
-        avg_iou = iou_score / len(loader)
+    # ------------------------------------------------------------------
+    # Full training loop
+    # ------------------------------------------------------------------
+    def train(self):
+        print(f"Training on {self.device}  |  {self.num_epochs} epochs")
+        print(f"Trainable params: "
+              f"{sum(p.numel() for p in self.model.parameters() if p.requires_grad) / 1e6:.1f}M")
 
-        self.writer.add_scalar("Loss/val", avg_loss, self.epoch)
-        self.writer.add_scalar("Dice/val", avg_dice, self.epoch)
-        self.writer.add_scalar("IoU/val", avg_iou, self.epoch)
+        for epoch in range(1, self.num_epochs + 1):
+            t0 = time.time()
 
-        return avg_loss, avg_dice, avg_iou
+            train_stats = self._train_epoch(epoch)
+            val_loss, val_metrics = self._val_epoch()
 
-    # ---------------- Utilities ----------------
-    def step_epoch(self):
-        self.epoch += 1
-        if self.scheduler:
+            current_lr = self.scheduler.get_last_lr()[0]
             self.scheduler.step()
 
-    def log_predictions(self, images, masks, preds, epoch):
-        images = images[:4]
-        masks = masks[:4]
-        preds = (torch.sigmoid(preds[:4]) > 0.5).float()
+            elapsed = time.time() - t0
+            dice    = val_metrics["dice"]
 
-        if masks.ndim == 3:
-            masks = masks.unsqueeze(1)
-        elif masks.ndim == 2:
-            masks = masks.unsqueeze(0).unsqueeze(0)
+            print(
+                f"Ep {epoch:03d}/{self.num_epochs}  "
+                f"lr={current_lr:.2e}  "
+                f"train_loss={train_stats['loss']:.4f}  "
+                f"val_loss={val_loss:.4f}  "
+                f"dice={dice:.4f}  "
+                f"mIoU={val_metrics['mIoU']:.4f}  "
+                f"[{elapsed:.0f}s]"
+            )
 
-        if preds.ndim == 3:
-            preds = preds.unsqueeze(1)
+            self._log_csv([
+                epoch, f"{current_lr:.6f}",
+                f"{train_stats['loss']:.4f}",
+                f"{train_stats['seg_loss']:.4f}",
+                f"{train_stats['rec_loss']:.4f}",
+                f"{val_loss:.4f}",
+                f"{dice:.4f}",
+                f"{val_metrics['mIoU']:.4f}",
+                f"{val_metrics['acc']:.4f}",
+                f"{val_metrics['sensitivity']:.4f}",
+                f"{val_metrics['specificity']:.4f}",
+                f"{val_metrics['f1']:.4f}",
+            ])
 
-        img_grid = torchvision.utils.make_grid(images, normalize=True, scale_each=True)
-        mask_grid = torchvision.utils.make_grid(masks, normalize=True, scale_each=True)
-        pred_grid = torchvision.utils.make_grid(preds, normalize=True, scale_each=True)
+            # Save best checkpoint
+            if dice > self.best_dice:
+                self.best_dice = dice
+                ckpt_path = self.save_dir / "best_maffnet.pth"
+                torch.save({
+                    "epoch": epoch,
+                    "state_dict": self.model.state_dict(),
+                    "optim": self.optim.state_dict(),
+                    "dice": dice,
+                }, ckpt_path)
+                print(f"  ↑ New best dice={dice:.4f}, saved → {ckpt_path}")
 
-        self.writer.add_image("Input Images", img_grid, epoch)
-        self.writer.add_image("Ground Truth Masks", mask_grid, epoch)
-        self.writer.add_image("Predicted Masks", pred_grid, epoch)
+            # Save latest checkpoint every 10 epochs
+            if epoch % 10 == 0:
+                ckpt_path = self.save_dir / f"maffnet_ep{epoch:03d}.pth"
+                torch.save({
+                    "epoch": epoch,
+                    "state_dict": self.model.state_dict(),
+                    "optim": self.optim.state_dict(),
+                    "dice": dice,
+                }, ckpt_path)
 
-        overlay = images.clone()
-        overlay[:, 0, :, :] = torch.where(preds.squeeze(1) > 0.5, 1.0, overlay[:, 0, :, :])
-        overlay[:, 1, :, :] = torch.where(masks.squeeze(1) > 0.5, 1.0, overlay[:, 1, :, :])
-        overlay_grid = torchvision.utils.make_grid(overlay, normalize=True, scale_each=True)
-        self.writer.add_image("Overlay Predictions", overlay_grid, epoch)
+        print(f"\nTraining complete. Best val dice: {self.best_dice:.4f}")
+        return self.best_dice
 
-    def fit(self, train_loader, val_loader, num_epochs):
-        for _ in range(num_epochs):
-            train_loss = self.train_epoch(train_loader)
-            val_loss, val_dice, val_iou = self.evaluate_epoch(val_loader)
-            self.step_epoch()
+    # ------------------------------------------------------------------
+    # Test evaluation
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def evaluate(self, test_loader: DataLoader, checkpoint: str = None) -> Dict[str, float]:
+        if checkpoint:
+            ckpt = torch.load(checkpoint, map_location=self.device)
+            self.model.load_state_dict(ckpt["state_dict"])
+            print(f"Loaded checkpoint: {checkpoint}  (epoch {ckpt.get('epoch','?')})")
 
-            print(f"Epoch {self.epoch}: Train Loss={train_loss:.4f}, "
-                  f"Val Loss={val_loss:.4f}, Val Dice={val_dice:.4f}, Val IoU={val_iou:.4f}")
+        self.model.eval()
+        metric_sums: Dict[str, float] = {
+            k: 0.0 for k in ("acc", "dice", "mIoU", "sensitivity", "specificity", "f1")
+        }
+        n = 0
 
-            os.makedirs("checkpoints", exist_ok=True)
-            torch.save(self.model.state_dict(), f"checkpoints/model_epoch{self.epoch}.pth")
+        for imgs, masks in test_loader:
+            imgs  = imgs.to(self.device)
+            masks = masks.to(self.device).float()
+            if masks.ndim == 3:
+                masks = masks.unsqueeze(1)
+
+            with autocast():
+                preds = self.model(imgs)
+
+            bs = imgs.size(0)
+            n += bs
+            m = compute_metrics(preds[0], masks)
+            for k, v in m.items():
+                metric_sums[k] += v * bs
+
+        results = {k: v / n for k, v in metric_sums.items()}
+        print("\n=== Test Results ===")
+        for k, v in results.items():
+            print(f"  {k:<14}: {v:.4f}")
+        return results

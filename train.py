@@ -1,227 +1,189 @@
-import argparse, torch, os
+"""
+train.py – MAFFNet training entry point.
+
+Usage:
+    python train.py --dataset ISIC_2016 --epochs 100 --batch_size 8
+    python train.py --dataset ISIC_2018 --checkpoint path/to/sam2.pth
+"""
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath("."))         # project first ✅
+sys.path.insert(1, os.path.abspath("src/sam2"))  # sam2 second
+import argparse
+import sys
+from pathlib import Path
+
+import torch
 from torch.utils.data import DataLoader
-from torch.optim import Adam
-from datasets.seg_dataset import SegDataset
-from models.unet import UNet
+import torchvision.transforms as T
+import torchvision.transforms.functional as TF
+from torchvision.transforms import InterpolationMode
+import random
+from PIL import Image
+import numpy as np
+
 from models.maffnet import MAFFNet
-from models.transunet import TransUNet
-from utils.metrics import dice_coeff, iou_coeff
-from torch.utils.tensorboard import SummaryWriter
-from segment_anything import sam_model_registry
-from torch.amp import autocast, GradScaler
-import torch.nn as nn
-import torchvision.utils as vutils
-from tqdm import tqdm
+from training.trainer import MAFFNetTrainer  # keep this
 
-# -------------------------
-# Loss
-# -------------------------
-class ComboLoss(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.bce = nn.BCEWithLogitsLoss()
 
-    def forward(self, pred, target):
-        bce = self.bce(pred, target)
-        pred = torch.sigmoid(pred)
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
 
-        intersection = (pred * target).sum(dim=(2,3))
-        union = pred.sum(dim=(2,3)) + target.sum(dim=(2,3))
+class SegDataset(torch.utils.data.Dataset):
+    """
+    Reads image/mask pairs from dataset_split/{dataset}/{split}/
+    CSV columns: image_path, mask_path  (absolute or relative to project root)
+    """
+    def __init__(self, csv_path: str, split: str = "train", img_size: int = 384):
+        import csv as _csv
+        self.split    = split
+        self.img_size = img_size
+        self.samples  = []
 
-        dice = 1 - ((2 * intersection + 1e-8) / (union + 1e-8))
-        return bce + dice.mean()
+        with open(csv_path) as f:
+            reader = _csv.DictReader(f)
+            print(reader.fieldnames)
+            for row in reader:
+                self.samples.append((row["image"], row["mask"]))
 
-criterion = ComboLoss()
+    # --- Augmentation ---
+    def _augment(self, img: Image.Image, mask: Image.Image):
+        # Horizontal flip
+        if random.random() > 0.5:
+            img  = TF.hflip(img)
+            mask = TF.hflip(mask)
+        # Vertical flip
+        if random.random() > 0.5:
+            img  = TF.vflip(img)
+            mask = TF.vflip(mask)
+        # Random rotation ±30°
+        angle = random.uniform(-30, 30)
+        img   = TF.rotate(img,  angle, interpolation=InterpolationMode.BILINEAR)
+        mask  = TF.rotate(mask, angle, interpolation=InterpolationMode.NEAREST)
+        # Random affine
+        if random.random() > 0.5:
+            params = T.RandomAffine.get_params(
+                degrees=(-15, 15), translate=(0.1, 0.1),
+                scale_ranges=(0.9, 1.1), shears=(-5, 5),
+                img_size=[self.img_size, self.img_size]
+            )
+            img  = TF.affine(img,  *params, interpolation=InterpolationMode.BILINEAR)
+            mask = TF.affine(mask, *params, interpolation=InterpolationMode.NEAREST)
+        # Color jitter (image only)
+        img = T.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1)(img)
+        return img, mask
 
-# Fix OpenMP
-torch.backends.cudnn.benchmark = True
-os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    def __len__(self):
+        return len(self.samples)
 
-# -------------------------
-# TensorBoard Images
-# -------------------------
-def log_segmentation_images(writer, inputs, masks, preds, step):
-    writer.add_image("Inputs", vutils.make_grid(inputs, normalize=True), step)
-    writer.add_image("GT", vutils.make_grid(masks.float(), normalize=True), step)
-    writer.add_image("Pred", vutils.make_grid(preds.float(), normalize=True), step)
+    def __getitem__(self, idx):
+        img_path, mask_path = self.samples[idx]
+        img  = Image.open(img_path).convert("RGB")
+        mask = Image.open(mask_path).convert("L")
 
-# -------------------------
-# Evaluation
-# -------------------------
-def evaluate(model, loader, device):
-    model.eval()
-    dices, ious = [], []
+        # Resize
+        img  = img.resize((self.img_size, self.img_size), Image.BILINEAR)
+        mask = mask.resize((self.img_size, self.img_size), Image.NEAREST)
 
-    sample_images, sample_masks, sample_preds = None, None, None
+        # Augment train only
+        if self.split == "train":
+            img, mask = self._augment(img, mask)
 
-    with torch.no_grad():
-        for i, (img, mask) in enumerate(loader):
+        # To tensor
+        img_t  = T.ToTensor()(img)                # [0,1], (3,H,W)
+        mask_t = torch.from_numpy(
+            np.array(mask, dtype=np.float32) / 255.0
+        ).unsqueeze(0)                             # (1,H,W)
+        mask_t = (mask_t > 0.5).float()
 
-            img, mask = img.to(device), mask.to(device)
-            pred = torch.sigmoid(model(img))
+        return img_t, mask_t
 
-            if mask.shape[-1] != pred.shape[-1]:
-                mask = torch.nn.functional.interpolate(mask, size=pred.shape[-2:], mode='nearest')
 
-            dice = dice_coeff(pred, mask).item()
-            iou = iou_coeff(pred, mask).item()
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
 
-            dices.append(dice)
-            ious.append(iou)
+def parse_args():
+    p = argparse.ArgumentParser(description="Train MAFFNet")
+    p.add_argument("--dataset",    default="ISIC_2018",
+                   choices=["ISIC_2016", "ISIC_2018"])
+    p.add_argument("--data_root",  default="dataset_split")
+    p.add_argument("--epochs",     type=int,   default=100)
+    p.add_argument("--batch_size", type=int,   default=8)
+    p.add_argument("--lr",         type=float, default=1e-3)
+    p.add_argument("--weight_decay", type=float, default=0.01)
+    p.add_argument("--rec_lambda", type=float, default=0.1)
+    p.add_argument("--img_size",   type=int,   default=384)
+    p.add_argument("--workers",    type=int,   default=4)
+    p.add_argument("--checkpoint", default=None,
+                   help="Path to SAM2 Hiera-Large checkpoint (.pth)")
+    p.add_argument("--resume",     default=None,
+                   help="Resume from MAFFNet checkpoint")
+    p.add_argument("--save_dir",   default="checkpoints")
+    p.add_argument("--test_only",  action="store_true")
+    return p.parse_args()
 
-            if i == 0:
-                sample_images = img.cpu()
-                sample_masks = mask.cpu()
-                sample_preds = (pred > 0.5).float().cpu()
 
-    return (
-        sum(dices)/len(dices),
-        sum(ious)/len(ious),
-        sample_images,
-        sample_masks,
-        sample_preds
+def main():
+    args = parse_args()
+
+    root = Path(args.data_root) / args.dataset
+
+    def make_loader(split, shuffle):
+        csv_path = root / f"{split}.csv"
+        if not csv_path.exists():
+            print(f"[WARN] {csv_path} not found, skipping {split} split.")
+            return None
+        ds = SegDataset(str(csv_path), split=split, img_size=args.img_size)
+        return DataLoader(
+            ds,
+            batch_size=args.batch_size,
+            shuffle=shuffle,
+            num_workers=args.workers,
+            pin_memory=True,
+            drop_last=(split == "train"),
+        )
+
+    train_loader = make_loader("train", shuffle=True)
+    val_loader   = make_loader("val",   shuffle=False)
+    test_loader  = make_loader("test",  shuffle=False)
+
+    if train_loader is None or val_loader is None:
+        print("ERROR: train/val CSVs missing. Aborting.")
+        sys.exit(1)
+
+    # Build model
+    print("Building MAFFNet with SAM2 Hiera-Large backbone …")
+    model = MAFFNet(checkpoint=args.checkpoint)
+
+    trainer = MAFFNetTrainer(
+        model        = model,
+        train_loader = train_loader,
+        val_loader   = val_loader,
+        save_dir     = args.save_dir,
+        num_epochs   = args.epochs,
+        lr           = args.lr,
+        weight_decay = args.weight_decay,
+        rec_lambda   = args.rec_lambda,
     )
 
-# -------------------------
-# Main
-# -------------------------
-def main(model_name, dataset_name):
+    if args.resume:
+        ckpt = torch.load(args.resume, map_location="cpu")
+        model.load_state_dict(ckpt["state_dict"])
+        print(f"Resumed from {args.resume}  (epoch {ckpt.get('epoch', '?')})")
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
+    if args.test_only:
+        best_ckpt = str(Path(args.save_dir) / "best_maffnet.pth")
+        trainer.evaluate(test_loader, checkpoint=best_ckpt)
+    else:
+        trainer.train()
+        if test_loader:
+            print("\n--- Final test evaluation ---")
+            best_ckpt = str(Path(args.save_dir) / "best_maffnet.pth")
+            trainer.evaluate(test_loader, checkpoint=best_ckpt)
 
-    base = f"dataset_split/{dataset_name}"
 
-    train_ds = SegDataset(f"{base}/train.csv", f"{base}/train/images", f"{base}/train/masks", 224)
-    val_ds   = SegDataset(f"{base}/val.csv", f"{base}/val/images", f"{base}/val/masks", 224)
-    test_ds  = SegDataset(f"{base}/test.csv", f"{base}/test/images", f"{base}/test/masks", 224)
-
-    train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=2)
-    val_loader   = DataLoader(val_ds, batch_size=2)
-    test_loader  = DataLoader(test_ds, batch_size=2)
-
-    writer = SummaryWriter(f"runs/{model_name}_{dataset_name}")
-
-    # Model
-    if model_name == "unet":
-        model = UNet()
-    elif model_name == "maffnet":
-        sam = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
-        model = MAFFNet(encoder=sam)
-    elif model_name == "transunet":
-        model = TransUNet(in_ch=3, out_ch=1, embed_dim=64, num_heads=2)
-
-    model = model.to(device)
-
-    optimizer = Adam(model.parameters(), lr=1e-4)
-    scaler = GradScaler()
-
-    num_epochs = 20
-    step = 0
-
-    # -------------------------
-    # Training
-    # -------------------------
-    for epoch in range(num_epochs):
-
-        print(f"\nEpoch {epoch+1}/{num_epochs}")
-        model.train()
-
-        loop = tqdm(train_loader)
-
-        for i, (images, labels) in enumerate(loop):
-
-            images, labels = images.to(device), labels.to(device)
-            optimizer.zero_grad()
-
-            with autocast("cuda"):
-                outputs = model(images)
-
-                if labels.shape[-1] != outputs.shape[-1]:
-                    labels = torch.nn.functional.interpolate(labels, size=outputs.shape[-2:], mode='nearest')
-
-                loss = criterion(outputs, labels)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
-
-            preds = (torch.sigmoid(outputs) > 0.5).float()
-
-            dice = dice_coeff(preds, labels).item()
-            iou = iou_coeff(preds, labels).item()
-
-            loop.set_postfix(loss=loss.item(), dice=dice, iou=iou)
-
-            writer.add_scalar("Loss/train", loss.item(), step)
-
-            if i % 100 == 0:
-                log_segmentation_images(writer, images.cpu(), labels.cpu(), preds.cpu(), step)
-
-            step += 1
-
-        val_dice, val_iou, _, _, _ = evaluate(model, val_loader, device)
-
-        writer.add_scalar("Dice/val", val_dice, epoch)
-        writer.add_scalar("IoU/val", val_iou, epoch)
-
-        print(f"Val Dice={val_dice:.4f}")
-
-    # -------------------------
-    # Test
-    # -------------------------
-    test_dice, test_iou, imgs, gts, preds = evaluate(model, test_loader, device)
-
-    print(f"\nTest Dice={test_dice:.4f}, IoU={test_iou:.4f}")
-
-    # -------------------------
-    # Save dashboard images
-    # -------------------------
-    os.makedirs("results/dashboard", exist_ok=True)
-
-    vutils.save_image(imgs[0], "results/dashboard/input.png")
-    vutils.save_image(gts[0], "results/dashboard/gt.png")
-    vutils.save_image(preds[0], "results/dashboard/pred.png")
-
-    # -------------------------
-    # Params
-    # -------------------------
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-    # -------------------------
-    # Dashboard
-    # -------------------------
-    from utils.report_generator import generate_report
-
-    generate_report(
-        metrics={"val_dice": val_dice, "test_dice": test_dice, "iou": test_iou},
-        config={
-            "dataset": dataset_name,
-            "epochs": num_epochs,
-            "batch_size": 2,
-            "lr": 1e-4,
-            "total_params": total_params,
-            "trainable_params": trainable_params
-        },
-        image_paths={
-            "input": "input.png",
-            "gt": "gt.png",
-            "pred": "pred.png"
-        }
-    )
-
-    torch.save(model.state_dict(), f"final_{model_name}_{dataset_name}.pth")
-
-    writer.close()
-
-# -------------------------
-# Entry
-# -------------------------
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, required=True)
-    parser.add_argument("--dataset", type=str, required=True)
-    args = parser.parse_args()
-
-    main(args.model, args.dataset)
+    main()
