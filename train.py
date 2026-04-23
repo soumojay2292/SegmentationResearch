@@ -104,6 +104,8 @@ def parse_args():
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--weight_decay", type=float, default=0.01)
     p.add_argument("--rec_lambda", type=float, default=0.1)
+    p.add_argument("--boundary_lambda", type=float, default=0.5,
+                   help="Weight for boundary-aware loss (0 = disabled)")
     p.add_argument("--img_size", type=int, default=384)
     p.add_argument("--fast", action="store_true")
     p.add_argument("--workers", type=int, default=2)
@@ -175,6 +177,7 @@ def main():
         lr=args.lr,
         weight_decay=args.weight_decay,
         rec_lambda=args.rec_lambda,
+        boundary_lambda=args.boundary_lambda,
     )
 
     trainer.train(config=vars(args), exp_dir=exp_dir)
