@@ -1,0 +1,317 @@
+/* ============================================================
+   MAFFNet Segmentation Research Dashboard
+   ============================================================ */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0f1117;
+  --bg-card:   #161a27;
+  --bg-card-2: #1a1e2e;
+  --bg-hover:  #1c2135;
+  --border:    #2d3148;
+  --border-2:  #1e2235;
+  --text-1:    #f1f5f9;
+  --text-2:    #94a3b8;
+  --text-3:    #475569;
+  --text-4:    #64748b;
+  --accent:    #6366f1;
+  --accent-2:  #818cf8;
+  --green:     #34d399;
+  --amber:     #f59e0b;
+  --red:       #f87171;
+  --font:      -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --radius:    10px;
+  --radius-sm: 8px;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text-1);
+}
+
+/* ---- layout shell ---- */
+.dash {
+  background: var(--bg);
+  min-height: 100vh;
+  padding: 28px 32px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ---- header ---- */
+.hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+
+.hdr-left h1 {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text-1);
+  letter-spacing: -0.4px;
+}
+
+.hdr-left p {
+  font-size: 12px;
+  color: var(--text-4);
+  margin-top: 4px;
+}
+
+.badge {
+  font-size: 11px;
+  background: var(--bg-card);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+
+/* ---- section label ---- */
+.sec-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-bottom: 12px;
+}
+
+/* ---- KPI grid ---- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.kpi {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.kpi:hover {
+  border-color: var(--accent-2);
+  background: var(--bg-hover);
+}
+
+.kpi-label {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.kpi-val {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text-1);
+  line-height: 1;
+  letter-spacing: -1px;
+}
+
+.kpi-delta {
+  font-size: 11px;
+  margin-top: 7px;
+  font-weight: 500;
+}
+
+.up { color: var(--green); }
+.dn { color: var(--red); }
+
+/* ---- two-col ---- */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+/* ---- generic card ---- */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  transition: border-color 0.2s ease;
+}
+
+.card:hover { border-color: #3d4060; }
+
+/* ---- comparison rows ---- */
+.cmp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-2);
+  font-size: 13px;
+}
+
+.cmp-row:last-child { border-bottom: none; }
+
+.cmp-metric {
+  color: var(--text-2);
+  width: 90px;
+  flex-shrink: 0;
+}
+
+.cmp-bar-wrap {
+  flex: 1;
+  margin: 0 12px;
+  height: 6px;
+  background: var(--border-2);
+  border-radius: 3px;
+  position: relative;
+}
+
+.cmp-bar {
+  height: 100%;
+  border-radius: 3px;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.bar-base { background: #3b4275; }
+.bar-imp  { background: var(--accent); opacity: 0.75; }
+
+.cmp-vals {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  min-width: 110px;
+  justify-content: flex-end;
+}
+
+.v-base { color: var(--text-4); }
+.v-imp  { color: var(--accent-2); font-weight: 600; }
+
+/* ---- charts ---- */
+.chart-wrap {
+  position: relative;
+  width: 100%;
+  height: 190px;
+}
+
+.curves-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+/* ---- legend ---- */
+.legend {
+  display: flex;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--text-4);
+  margin-bottom: 10px;
+  align-items: center;
+}
+
+.leg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+/* ---- visual results ---- */
+.visual-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.vis-card {
+  background: var(--bg-card-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.vis-card:hover {
+  border-color: var(--accent-2);
+  transform: translateY(-2px);
+}
+
+.vis-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-3);
+  padding: 7px 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+}
+
+.vis-img {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #1a2235;
+  overflow: hidden;
+}
+
+.vis-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* ---- config ---- */
+.cfg-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.cfg-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 11px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: border-color 0.2s ease;
+}
+
+.cfg-item:hover { border-color: #3d4060; }
+
+.cfg-key { font-size: 12px; color: var(--text-3); }
+.cfg-val { font-size: 13px; font-weight: 600; color: #c7d2fe; }
+
+/* ---- responsive ---- */
+@media (max-width: 900px) {
+  .kpi-grid                   { grid-template-columns: repeat(2, 1fr); }
+  .two-col, .curves-grid      { grid-template-columns: 1fr; }
+  .cfg-grid                   { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 580px) {
+  .dash        { padding: 16px; }
+  .kpi-grid    { grid-template-columns: 1fr 1fr; }
+  .visual-grid { grid-template-columns: 1fr; }
+  .cfg-grid    { grid-template-columns: 1fr; }
+}

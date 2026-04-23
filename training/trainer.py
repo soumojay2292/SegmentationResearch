@@ -13,12 +13,15 @@ import os
 import time
 import csv
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Tuple, Optional
+
+from tqdm import tqdm
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LinearLR
 from torch.utils.data import DataLoader
@@ -72,7 +75,12 @@ class MAFFNetLoss(nn.Module):
         img_norm = img * 2.0 - 1.0
         rec_loss = self.mse(rec, img_norm)
 
+        # --- FORCE SCALAR LOSSES ---
+        seg_loss = seg_loss.mean()
+        rec_loss = rec_loss.mean()
+
         total = seg_loss + self.lam * rec_loss
+
         return total, {
             "seg_loss": seg_loss.item(),
             "rec_loss": rec_loss.item(),
@@ -158,7 +166,7 @@ class MAFFNetTrainer:
         )
 
         self.criterion = MAFFNetLoss(rec_lambda=rec_lambda).to(self.device)
-        self.scaler    = GradScaler()
+        self.scaler    = GradScaler('cuda')
 
         self.best_dice = 0.0
         self._csv_path = self.save_dir / "training_log.csv"
@@ -189,7 +197,9 @@ class MAFFNetTrainer:
         total_loss = seg_loss_sum = rec_loss_sum = 0.0
         n = 0
 
-        for imgs, masks in self.train_loader:
+        pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}", leave=False)
+
+        for imgs, masks in pbar:
             imgs  = imgs.to(self.device)
             masks = masks.to(self.device).float()
             if masks.ndim == 3:
@@ -197,10 +207,11 @@ class MAFFNetTrainer:
 
             self.optim.zero_grad(set_to_none=True)
 
-            with autocast():
+            with autocast('cuda'):
                 preds = self.model(imgs)
                 loss, sub = self.criterion(preds, masks, imgs)
 
+            pbar.set_postfix({"loss": float(loss.item())})
             self.scaler.scale(loss).backward()
             self.scaler.unscale_(self.optim)
             nn.utils.clip_grad_norm_(
@@ -225,7 +236,7 @@ class MAFFNetTrainer:
     # Validation
     # ------------------------------------------------------------------
     @torch.no_grad()
-    def _val_epoch(self) -> Tuple[float, Dict[str, float]]:
+    def _val_epoch(self, epoch: int = 0) -> Tuple[float, Dict[str, float]]:
         self.model.eval()
         total_loss = 0.0
         metric_sums: Dict[str, float] = {
@@ -239,7 +250,7 @@ class MAFFNetTrainer:
             if masks.ndim == 3:
                 masks = masks.unsqueeze(1)
 
-            with autocast():
+            with autocast('cuda'):
                 preds = self.model(imgs)
                 loss, _ = self.criterion(preds, masks, imgs)
 
@@ -256,18 +267,90 @@ class MAFFNetTrainer:
         return total_loss / n, avg_metrics
 
     # ------------------------------------------------------------------
+    # Save prediction samples to run_dir/samples/
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def _save_samples(self, run_dir: Path, n: int = 5) -> Path:
+        import numpy as np
+        from PIL import Image
+
+        sample_dir = run_dir / "samples"
+        sample_dir.mkdir(parents=True, exist_ok=True)
+
+        self.model.eval()
+        saved = 0
+
+        for imgs, masks in self.val_loader:
+            if saved >= n:
+                break
+            imgs  = imgs.to(self.device)
+            masks = masks.to(self.device).float()
+            if masks.ndim == 3:
+                masks = masks.unsqueeze(1)
+
+            with autocast('cuda'):
+                preds = self.model(imgs)
+
+            probs   = torch.sigmoid(preds[0])
+            pred_bin = (probs > 0.5).float()
+
+            for j in range(imgs.size(0)):
+                if saved >= n:
+                    break
+                img_np  = (imgs[j].cpu().numpy().transpose(1, 2, 0) * 255).clip(0, 255).astype(np.uint8)
+                gt_np   = (masks[j, 0].cpu().numpy() * 255).astype(np.uint8)
+                pred_np = (pred_bin[j, 0].cpu().numpy() * 255).astype(np.uint8)
+
+                Image.fromarray(img_np).save(sample_dir / f"input_{saved}.png")
+                Image.fromarray(gt_np,   mode="L").save(sample_dir / f"gt_{saved}.png")
+                Image.fromarray(pred_np, mode="L").save(sample_dir / f"pred_{saved}.png")
+                saved += 1
+
+        print(f"[trainer] Saved {saved} prediction samples → {sample_dir}")
+        return sample_dir
+
+    # ------------------------------------------------------------------
+    # Save run summary to run_dir/summary.csv
+    # ------------------------------------------------------------------
+    def _save_summary(self, run_dir: Path, config: dict,
+                      val_metrics: dict, val_loss: float) -> Path:
+        summary_path = run_dir / "summary.csv"
+        with open(summary_path, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["metric", "value"])
+            w.writerow(["val_loss",    f"{val_loss:.4f}"])
+            for k, v in val_metrics.items():
+                w.writerow([k, f"{v:.4f}"])
+            w.writerow(["best_dice", f"{self.best_dice:.4f}"])
+            for k, v in config.items():
+                w.writerow([k, v])
+        return summary_path
+
+    # ------------------------------------------------------------------
     # Full training loop
     # ------------------------------------------------------------------
-    def train(self):
-        print(f"Training on {self.device}  |  {self.num_epochs} epochs")
-        print(f"Trainable params: "
-              f"{sum(p.numel() for p in self.model.parameters() if p.requires_grad) / 1e6:.1f}M")
+    def train(self, config: dict = None, exp_dir=None):
+        config = config or {}
 
-        for epoch in range(1, self.num_epochs + 1):
+        total_p   = sum(p.numel() for p in self.model.parameters()) / 1e6
+        train_p   = sum(p.numel() for p in self.model.parameters() if p.requires_grad) / 1e6
+        print(f"Training on {self.device}  |  {self.num_epochs} epochs")
+        print(f"Trainable params: {train_p:.1f}M  /  Total: {total_p:.1f}M")
+
+        run_dir = Path(exp_dir) if exp_dir is not None else Path("results") / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        last_val_metrics: Dict[str, float] = {}
+        last_val_loss = 0.0
+
+        for epoch in tqdm(range(self.num_epochs), desc="Epochs"):
             t0 = time.time()
 
             train_stats = self._train_epoch(epoch)
-            val_loss, val_metrics = self._val_epoch()
+            val_loss, val_metrics = self._val_epoch(epoch)
+
+            last_val_metrics = val_metrics
+            last_val_loss    = val_loss
 
             current_lr = self.scheduler.get_last_lr()[0]
             self.scheduler.step()
@@ -275,18 +358,18 @@ class MAFFNetTrainer:
             elapsed = time.time() - t0
             dice    = val_metrics["dice"]
 
-            print(
-                f"Ep {epoch:03d}/{self.num_epochs}  "
+            tqdm.write(
+                f"  Ep {epoch+1:03d}/{self.num_epochs}  "
                 f"lr={current_lr:.2e}  "
-                f"train_loss={train_stats['loss']:.4f}  "
-                f"val_loss={val_loss:.4f}  "
+                f"train={train_stats['loss']:.4f}  "
+                f"val={val_loss:.4f}  "
                 f"dice={dice:.4f}  "
                 f"mIoU={val_metrics['mIoU']:.4f}  "
                 f"[{elapsed:.0f}s]"
             )
 
             self._log_csv([
-                epoch, f"{current_lr:.6f}",
+                epoch + 1, f"{current_lr:.6f}",
                 f"{train_stats['loss']:.4f}",
                 f"{train_stats['seg_loss']:.4f}",
                 f"{train_stats['rec_loss']:.4f}",
@@ -299,29 +382,61 @@ class MAFFNetTrainer:
                 f"{val_metrics['f1']:.4f}",
             ])
 
-            # Save best checkpoint
             if dice > self.best_dice:
                 self.best_dice = dice
                 ckpt_path = self.save_dir / "best_maffnet.pth"
                 torch.save({
-                    "epoch": epoch,
+                    "epoch": epoch + 1,
                     "state_dict": self.model.state_dict(),
                     "optim": self.optim.state_dict(),
                     "dice": dice,
                 }, ckpt_path)
-                print(f"  ↑ New best dice={dice:.4f}, saved → {ckpt_path}")
+                tqdm.write(f"  ↑ New best dice={dice:.4f} → {ckpt_path}")
 
-            # Save latest checkpoint every 10 epochs
-            if epoch % 10 == 0:
-                ckpt_path = self.save_dir / f"maffnet_ep{epoch:03d}.pth"
+            if (epoch + 1) % 10 == 0:
+                ckpt_path = self.save_dir / f"maffnet_ep{epoch+1:03d}.pth"
                 torch.save({
-                    "epoch": epoch,
+                    "epoch": epoch + 1,
                     "state_dict": self.model.state_dict(),
                     "optim": self.optim.state_dict(),
                     "dice": dice,
                 }, ckpt_path)
 
         print(f"\nTraining complete. Best val dice: {self.best_dice:.4f}")
+
+        # Post-training: samples, summary, report
+        image_dir    = self._save_samples(run_dir)
+        summary_path = self._save_summary(run_dir, config, last_val_metrics, last_val_loss)
+
+        report_config = {
+            "dataset":          config.get("dataset",    "—"),
+            "epochs":           self.num_epochs,
+            "batch_size":       config.get("batch_size", "—"),
+            "lr":               config.get("lr",         "—"),
+            "img_size":         config.get("img_size",   "—"),
+            "total_params":     f"{total_p:.1f}M",
+            "trainable_params": f"{train_p:.1f}M",
+        }
+
+        from utils.report_generator import generate_report
+        generate_report(
+            str(self._csv_path),
+            str(summary_path),
+            str(image_dir),
+            report_config,
+        )
+
+        if exp_dir is not None:
+            import shutil
+            best_ckpt = self.save_dir / "best_maffnet.pth"
+            if best_ckpt.exists():
+                shutil.copy2(best_ckpt, run_dir / "model.pth")
+            for curve in ("loss_curve.png", "iou_curve.png"):
+                src = Path("results") / "dashboard" / curve
+                if src.exists():
+                    shutil.copy2(src, run_dir / curve)
+            print(f"[exp] Experiment saved → {run_dir}")
+
         return self.best_dice
 
     # ------------------------------------------------------------------
@@ -346,7 +461,7 @@ class MAFFNetTrainer:
             if masks.ndim == 3:
                 masks = masks.unsqueeze(1)
 
-            with autocast():
+            with autocast('cuda'):
                 preds = self.model(imgs)
 
             bs = imgs.size(0)

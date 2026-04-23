@@ -19,6 +19,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Tuple
 from sam2.build_sam import build_sam2 
+import sys
+from pathlib import Path
+_SAM2_REPO = str(Path("src/sam2").resolve())
+if _SAM2_REPO not in sys.path:
+    sys.path.insert(0, _SAM2_REPO)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -97,7 +102,9 @@ class FGFF(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Frequency branch
-        x_fft   = torch.fft.rfft2(x, norm='ortho')
+        # --- Force FFT in float32 to avoid cuFFT fp16 limitation ---
+        x_float = x.float()
+        x_fft = torch.fft.rfft2(x_float, norm='ortho')
         mag     = torch.abs(x_fft)                    # (B, C, H, W//2+1)
         mag_full = F.interpolate(mag, size=x.shape[2:], mode='bilinear',
                                  align_corners=False)
@@ -106,7 +113,7 @@ class FGFF(nn.Module):
         mag_max  = mag_full.flatten(2).max(dim=2)[0].unsqueeze(-1).unsqueeze(-1)
         mag_norm = (mag_full - mag_min) / (mag_max - mag_min + 1e-8)
 
-        freq_feat    = self.freq_conv(mag_norm)
+        freq_feat = self.freq_conv(mag_norm.to(x.dtype))
         spatial_feat = self.spatial_conv(x)
         fused        = self.fuse(torch.cat([spatial_feat, freq_feat], dim=1))
         return fused + x  # residual
@@ -182,75 +189,48 @@ class RDB(nn.Module):
 # ---------------------------------------------------------------------------
 # SAM2 Hiera-Large backbone wrapper
 # ---------------------------------------------------------------------------
-class SAM2HieraBackbone(nn.Module):
-    """
-    Wraps SAM2's image encoder (Hiera-Large).
-    Returns 4-level feature maps at strides ~[4, 8, 16, 32].
-    Channel counts for Hiera-Large: 144, 288, 576, 1152
-    """
-    HIERA_LARGE_CHANNELS = (144, 288, 576, 1152)
-
-    def __init__(self, checkpoint: str = None):
+class SAM2HieraEncoder(nn.Module):
+    STAGE_DIMS: list = [256, 256, 256, 256] 
+    def __init__(
+        self,
+        config_path: str = "src/sam2/sam2/configs/sam2/sam2_hiera_l.yaml",
+        checkpoint:  str = "sam2_hiera_large.pt",
+        device:      str = "cpu",
+    ):
         super().__init__()
-        self._encoder = None
-        self._channels = self.HIERA_LARGE_CHANNELS
+        from models.sam2_loader import load_sam2_encoder
+        self.encoder      = load_sam2_encoder(config_path, checkpoint, device)
+        self.out_channels = self.STAGE_DIMS
+        self.channels     = self.STAGE_DIMS 
+        for p in self.encoder.parameters():
+            p.requires_grad_(False)
 
-        self._build_sam2(checkpoint)
-
-    def _build_sam2(self, checkpoint):
-        import os
-        from hydra import initialize, compose
-        from hydra.core.global_hydra import GlobalHydra
-
-        # 🔥 Reset Hydra (important for repeated runs)
-        if GlobalHydra.instance().is_initialized():
-            GlobalHydra.instance().clear()
-
-        # 🔥 Point Hydra to SAM2 config folder
-        config_dir = os.path.abspath(
-            os.path.join(os.path.dirname(__file__), "../src/sam2/sam2/configs")
-        )
-
-        with initialize(config_path=config_dir, version_base=None):
-            sam2_model = build_sam2(
-                config_file="sam2_hiera_l",
-                ckpt_path=checkpoint
-            )
-
-        self._encoder = sam2_model.image_encoder
-
-        for p in self._encoder.parameters():
-            p.requires_grad = False
-
-        self._encoder.eval()
-
-        print("✅ SAM2 loaded correctly")
-
-    @property
-    def channels(self):
-        return self._channels
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, ...]:
-        """
-        Returns (f1, f2, f3, f4) feature maps from shallow to deep.
-        Each fi: (B, Ci, Hi, Wi)
-        """
+    def forward(self, x: torch.Tensor):
         with torch.no_grad():
-            features = self._encoder(x)  # dict or list depending on SAM2 version
-        # SAM2 image encoder returns backbone features as list/dict
-        if isinstance(features, dict):
-            # Typical SAM2 output: features['backbone_fpn'] = list of tensors
-            feats = features.get('backbone_fpn', list(features.values()))
-        elif isinstance(features, (list, tuple)):
-            feats = features
+            out = self.encoder(x)
+        # normalise output format across SAM2 versions
+        if isinstance(out, dict):
+            maps = out.get("backbone_fpn", out.get("vision_features",
+                   list(out.values())))
+        elif isinstance(out, (list, tuple)):
+            maps = list(out)
         else:
-            raise ValueError(f"Unexpected backbone output type: {type(features)}")
+            maps = [out]
+        # --- Adapt SAM2 outputs dynamically ---
+        if len(maps) == 3:
+            f2, f3, f4 = maps
 
-        # Ensure we have 4 levels; pad or trim as needed
-        feats = list(feats)
-        assert len(feats) == 4, f"Expected 4 feature levels, got {len(feats)}"
-        return tuple(feats)   # (f1, f2, f3, f4) shallow→deep
+            # Create shallow feature (f1) by upsampling f2
+            f1 = F.interpolate(f2, scale_factor=2, mode='bilinear', align_corners=False)
 
+        elif len(maps) >= 4:
+            f1, f2, f3, f4 = maps[:4]
+
+        else:
+            raise ValueError(f"[SAM2] Too few feature maps: {len(maps)}")
+
+
+        return f1, f2, f3, f4
 
 # ---------------------------------------------------------------------------
 # MAFFNet – full model
@@ -268,7 +248,12 @@ class MAFFNet(nn.Module):
         super().__init__()
 
         # ---------- Backbone ----------
-        self.backbone = SAM2HieraBackbone(checkpoint)
+        self.backbone = SAM2HieraEncoder(
+        config_path="src/sam2/sam2/configs/sam2/sam2_hiera_l.yaml",
+        checkpoint=checkpoint,
+        device="cuda" if torch.cuda.is_available() else "cpu"
+    )
+        print("Encoder type:", type(self.backbone.encoder))
         c1, c2, c3, c4 = self.backbone.channels   # 144, 288, 576, 1152
 
         # ---------- MMPA per level ----------
