@@ -36,8 +36,7 @@ class DiceLoss(nn.Module):
         super().__init__()
         self.smooth = smooth
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        probs = torch.sigmoid(logits)
+    def forward(self, probs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         flat_p = probs.flatten(1)
         flat_t = targets.flatten(1)
         inter  = (flat_p * flat_t).sum(1)
@@ -66,57 +65,50 @@ class BoundaryLoss(nn.Module):
         gy = F.conv2d(x, ky, padding=1)
         return (gx ** 2 + gy ** 2).sqrt().clamp(0, 1)
 
-    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        pred_edges = self._edges(torch.sigmoid(logits))
+    def forward(self, probs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        pred_edges = self._edges(probs)
         gt_edges   = self._edges(targets)
         return F.l1_loss(pred_edges, gt_edges)
 
 
 class MAFFNetLoss(nn.Module):
     """
-    total = mean(dice + bce + λ_bnd·boundary_l1) over p1–p4
-          + λ_rec · mse(rec, img)
+    total = mean(dice + bce) over p1–p4
+          + λ_bnd · boundary_l1  (optional, default λ_bnd=0.1)
     boundary_l1 = L1(sobel(pred), sobel(gt))
     """
-    def __init__(self, rec_lambda: float = 0.1, boundary_lambda: float = 0.0):
+    def __init__(self, boundary_lambda: float = 0.1):
         super().__init__()
         self.dice     = DiceLoss()
         self.bce      = nn.BCEWithLogitsLoss()
         self.boundary = BoundaryLoss()
-        self.mse      = nn.MSELoss()
-        self.lam      = rec_lambda
         self.blam     = boundary_lambda
 
     def forward(
         self,
         preds: Tuple[torch.Tensor, ...],   # (p1,p2,p3,p4,rec)
         mask:  torch.Tensor,               # (B,1,H,W) float in [0,1]
-        img:   torch.Tensor,               # (B,3,H,W)  original image
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        p1, p2, p3, p4, rec = preds
+        p1, p2, p3, p4, _rec = preds
+        mask = mask.clamp(0, 1)
 
         seg_loss = bnd_loss = 0.0
         for p in (p1, p2, p3, p4):
-            seg_loss = seg_loss + self.dice(p, mask) + self.bce(p, mask)
+            prob = torch.sigmoid(p)
+            seg_loss = seg_loss + self.dice(prob, mask) + self.bce(p, mask)
             if self.blam > 0.0:
-                bnd_loss = bnd_loss + self.boundary(p, mask)
-        seg_loss = seg_loss / 4.0
-        bnd_loss = bnd_loss / 4.0
+                bnd_loss = bnd_loss + self.boundary(prob, mask)
 
-        # Normalise input image to [-1,1] to match RDB Tanh output
-        img_norm = img * 2.0 - 1.0
-        rec_loss = self.mse(rec, img_norm)
+        seg_loss = (seg_loss / 4.0).mean()
 
-        seg_loss = seg_loss.mean()
-        rec_loss = rec_loss.mean()
         if self.blam > 0.0:
-            bnd_loss = bnd_loss.mean()
-
-        total = seg_loss + self.lam * rec_loss + self.blam * bnd_loss
+            bnd_loss = (bnd_loss / 4.0).mean()
+            total = seg_loss + self.blam * bnd_loss
+        else:
+            total = seg_loss
 
         return total, {
             "seg_loss":      seg_loss.item(),
-            "rec_loss":      rec_loss.item(),
             "boundary_loss": bnd_loss.item() if self.blam > 0.0 else 0.0,
         }
 
@@ -172,8 +164,7 @@ class MAFFNetTrainer:
         num_epochs:      int  = 100,
         lr:              float = 1e-3,
         weight_decay:    float = 0.01,
-        rec_lambda:      float = 0.1,
-        boundary_lambda: float = 0.0,
+        boundary_lambda: float = 0.1,
         device:          Optional[torch.device] = None,
     ):
         self.model       = model
@@ -201,7 +192,7 @@ class MAFFNetTrainer:
         )
 
         self.criterion = MAFFNetLoss(
-            rec_lambda=rec_lambda, boundary_lambda=boundary_lambda
+            boundary_lambda=boundary_lambda
         ).to(self.device)
         self.scaler    = GradScaler('cuda')
 
@@ -217,7 +208,7 @@ class MAFFNetTrainer:
             w = csv.writer(f)
             w.writerow([
                 "epoch", "lr",
-                "train_loss", "train_seg_loss", "train_rec_loss", "train_boundary_loss",
+                "train_loss", "train_seg_loss", "train_boundary_loss",
                 "val_loss", "val_dice", "val_miou",
                 "val_acc", "val_sensitivity", "val_specificity", "val_f1",
             ])
@@ -231,7 +222,7 @@ class MAFFNetTrainer:
     # ------------------------------------------------------------------
     def _train_epoch(self, epoch: int) -> Dict[str, float]:
         self.model.train()
-        total_loss = seg_loss_sum = rec_loss_sum = bnd_loss_sum = 0.0
+        total_loss = seg_loss_sum = bnd_loss_sum = 0.0
         n = 0
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}", leave=False)
@@ -246,7 +237,7 @@ class MAFFNetTrainer:
 
             with autocast('cuda'):
                 preds = self.model(imgs)
-                loss, sub = self.criterion(preds, masks, imgs)
+                loss, sub = self.criterion(preds, masks)
 
             pbar.set_postfix({"loss": float(loss.item())})
             self.scaler.scale(loss).backward()
@@ -260,14 +251,12 @@ class MAFFNetTrainer:
             bs = imgs.size(0)
             total_loss   += loss.item() * bs
             seg_loss_sum += sub["seg_loss"] * bs
-            rec_loss_sum += sub["rec_loss"] * bs
             bnd_loss_sum += sub["boundary_loss"] * bs
             n += bs
 
         return {
             "loss":          total_loss   / n,
             "seg_loss":      seg_loss_sum / n,
-            "rec_loss":      rec_loss_sum / n,
             "boundary_loss": bnd_loss_sum / n,
         }
 
@@ -291,7 +280,7 @@ class MAFFNetTrainer:
 
             with autocast('cuda'):
                 preds = self.model(imgs)
-                loss, _ = self.criterion(preds, masks, imgs)
+                loss, _ = self.criterion(preds, masks)
 
             bs = imgs.size(0)
             total_loss += loss.item() * bs
@@ -411,7 +400,6 @@ class MAFFNetTrainer:
                 epoch + 1, f"{current_lr:.6f}",
                 f"{train_stats['loss']:.4f}",
                 f"{train_stats['seg_loss']:.4f}",
-                f"{train_stats['rec_loss']:.4f}",
                 f"{train_stats['boundary_loss']:.4f}",
                 f"{val_loss:.4f}",
                 f"{dice:.4f}",
