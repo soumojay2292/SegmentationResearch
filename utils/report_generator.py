@@ -425,7 +425,7 @@ img{{width:100%;border-radius:8px;display:block}}
       {_config_item("Batch size", batch)}
       {_config_item("LR",         lr)}
       {_config_item("Image size", f"{img_size}×{img_size}" if img_size != "—" else "—")}
-      {_config_item("Loss",       "Dice + BCE + MSE")}
+      {_config_item("Loss",       "Dice + BCE + Boundary")}
     </div>
   </div>
   <div class="card">

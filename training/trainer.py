@@ -1,7 +1,7 @@
 """
 Trainer for MAFFNet skin lesion segmentation.
 
-Loss  : Dice + BCEWithLogits on p1–p4  +  λ·MSE(rec, input)
+Loss  : Dice + BCEWithLogits on p1–p4  +  0.01·BoundaryL1 (after epoch 10 warmup)
 Optim : AdamW, lr=1e-3, wd=0.01
 Sched : Linear LR decay over 100 epochs
 AMP   : enabled (GradScaler)
@@ -46,11 +46,7 @@ class DiceLoss(nn.Module):
 
 
 class BoundaryLoss(nn.Module):
-    """
-    Edge-aware L1 loss: extracts boundaries from GT mask and predicted
-    probabilities using Sobel filters, then penalises edge mismatches.
-    Loss = L1(sobel(sigmoid(logits)), sobel(targets))
-    """
+    """Sobel edge L1: L1(edges(sigmoid(logits)), edges(gt))."""
     def __init__(self):
         super().__init__()
         kx = torch.tensor([[-1., 0., 1.], [-2., 0., 2.], [-1., 0., 1.]])
@@ -66,28 +62,29 @@ class BoundaryLoss(nn.Module):
         return (gx ** 2 + gy ** 2).sqrt().clamp(0, 1)
 
     def forward(self, probs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        pred_edges = self._edges(probs)
-        gt_edges   = self._edges(targets)
-        return F.l1_loss(pred_edges, gt_edges)
+        return F.l1_loss(self._edges(probs), self._edges(targets))
 
 
 class MAFFNetLoss(nn.Module):
     """
-    total = mean(dice + bce) over p1–p4
-          + λ_bnd · boundary_l1  (optional, default λ_bnd=0.1)
-    boundary_l1 = L1(sobel(pred), sobel(gt))
+    epoch < 10  → total = mean(dice + bce) over p1–p4          (warmup)
+    epoch >= 10 → total = mean(dice + bce) + 0.01 · boundary   (full)
+
+    bce      = BCEWithLogitsLoss(pos_weight=2.0)  raw logits
+    dice     = DiceLoss(sigmoid(logits))
+    boundary = L1(sobel(avg_pool(sigmoid(logits))), sobel(gt))
     """
-    def __init__(self, boundary_lambda: float = 0.1):
+    def __init__(self):
         super().__init__()
         self.dice     = DiceLoss()
-        self.bce      = nn.BCEWithLogitsLoss()
         self.boundary = BoundaryLoss()
-        self.blam     = boundary_lambda
+        self.register_buffer("pos_weight", torch.tensor([2.0]))
 
     def forward(
         self,
         preds: Tuple[torch.Tensor, ...],   # (p1,p2,p3,p4,rec)
         mask:  torch.Tensor,               # (B,1,H,W) float in [0,1]
+        epoch: int = 0,
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
         p1, p2, p3, p4, _rec = preds
         mask = mask.clamp(0, 1)
@@ -95,21 +92,24 @@ class MAFFNetLoss(nn.Module):
         seg_loss = bnd_loss = 0.0
         for p in (p1, p2, p3, p4):
             prob = torch.sigmoid(p)
-            seg_loss = seg_loss + self.dice(prob, mask) + self.bce(p, mask)
-            if self.blam > 0.0:
-                bnd_loss = bnd_loss + self.boundary(prob, mask)
+            bce  = F.binary_cross_entropy_with_logits(p, mask, pos_weight=self.pos_weight)
+            seg_loss = seg_loss + self.dice(prob, mask) + bce
+            if epoch >= 10:
+                prob_smooth = F.avg_pool2d(prob, kernel_size=3, stride=1, padding=1)
+                bnd_loss    = bnd_loss + self.boundary(prob_smooth, mask)
 
         seg_loss = (seg_loss / 4.0).mean()
 
-        if self.blam > 0.0:
+        if epoch >= 10:
             bnd_loss = (bnd_loss / 4.0).mean()
-            total = seg_loss + self.blam * bnd_loss
+            total    = seg_loss + 0.01 * bnd_loss
         else:
-            total = seg_loss
+            bnd_loss = torch.tensor(0.0)
+            total    = seg_loss
 
         return total, {
             "seg_loss":      seg_loss.item(),
-            "boundary_loss": bnd_loss.item() if self.blam > 0.0 else 0.0,
+            "boundary_loss": bnd_loss.item(),
         }
 
 
@@ -160,12 +160,11 @@ class MAFFNetTrainer:
         model: nn.Module,
         train_loader: DataLoader,
         val_loader:   DataLoader,
-        save_dir:        str  = "checkpoints",
-        num_epochs:      int  = 100,
-        lr:              float = 1e-3,
-        weight_decay:    float = 0.01,
-        boundary_lambda: float = 0.1,
-        device:          Optional[torch.device] = None,
+        save_dir:     str  = "checkpoints",
+        num_epochs:   int  = 100,
+        lr:           float = 1e-3,
+        weight_decay: float = 0.01,
+        device:       Optional[torch.device] = None,
     ):
         self.model       = model
         self.train_loader = train_loader
@@ -191,9 +190,7 @@ class MAFFNetTrainer:
             total_iters=num_epochs,
         )
 
-        self.criterion = MAFFNetLoss(
-            boundary_lambda=boundary_lambda
-        ).to(self.device)
+        self.criterion = MAFFNetLoss().to(self.device)
         self.scaler    = GradScaler('cuda')
 
         self.best_dice = 0.0
@@ -237,7 +234,7 @@ class MAFFNetTrainer:
 
             with autocast('cuda'):
                 preds = self.model(imgs)
-                loss, sub = self.criterion(preds, masks)
+                loss, sub = self.criterion(preds, masks, epoch=epoch)
 
             pbar.set_postfix({"loss": float(loss.item())})
             self.scaler.scale(loss).backward()
@@ -249,8 +246,8 @@ class MAFFNetTrainer:
             self.scaler.update()
 
             bs = imgs.size(0)
-            total_loss   += loss.item() * bs
-            seg_loss_sum += sub["seg_loss"] * bs
+            total_loss   += loss.item()          * bs
+            seg_loss_sum += sub["seg_loss"]      * bs
             bnd_loss_sum += sub["boundary_loss"] * bs
             n += bs
 
@@ -280,7 +277,7 @@ class MAFFNetTrainer:
 
             with autocast('cuda'):
                 preds = self.model(imgs)
-                loss, _ = self.criterion(preds, masks)
+                loss, _ = self.criterion(preds, masks, epoch=epoch)
 
             bs = imgs.size(0)
             total_loss += loss.item() * bs
