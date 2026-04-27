@@ -407,25 +407,20 @@ class MAFFNetTrainer:
                 f"{val_metrics['f1']:.4f}",
             ])
 
+            # Save every epoch
+            ckpt = {
+                "epoch":      epoch + 1,
+                "state_dict": self.model.state_dict(),
+                "optim":      self.optim.state_dict(),
+                "dice":       dice,
+            }
+            torch.save(ckpt, self.save_dir / f"model_epoch_{epoch+1}.pth")
+
+            # Keep best model separately
             if dice > self.best_dice:
                 self.best_dice = dice
-                ckpt_path = self.save_dir / "best_maffnet.pth"
-                torch.save({
-                    "epoch": epoch + 1,
-                    "state_dict": self.model.state_dict(),
-                    "optim": self.optim.state_dict(),
-                    "dice": dice,
-                }, ckpt_path)
-                tqdm.write(f"  ↑ New best dice={dice:.4f} → {ckpt_path}")
-
-            if (epoch + 1) % 10 == 0:
-                ckpt_path = self.save_dir / f"maffnet_ep{epoch+1:03d}.pth"
-                torch.save({
-                    "epoch": epoch + 1,
-                    "state_dict": self.model.state_dict(),
-                    "optim": self.optim.state_dict(),
-                    "dice": dice,
-                }, ckpt_path)
+                torch.save(ckpt, self.save_dir / "best_maffnet.pth")
+                tqdm.write(f"  ↑ New best dice={dice:.4f} → best_maffnet.pth")
 
         print(f"\nTraining complete. Best val dice: {self.best_dice:.4f}")
 
