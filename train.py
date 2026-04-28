@@ -18,8 +18,25 @@ from tqdm import tqdm   # ✅ NEW
 from models.maffnet import MAFFNet
 from models.attention_unet import AttentionUNet
 from models.unet_plus_plus import UNetPlusPlus
+from models.unet import UNet
+from models.transunet import TransUNet
 from training.trainer import MAFFNetTrainer
 from training.simple_trainer import SimpleTrainer
+
+
+class _LogitWrapper(torch.nn.Module):
+    """Converts probability outputs (sigmoid already applied) to logits.
+
+    Needed for UNet, which applies sigmoid internally, so that SimpleLoss
+    and compute_metrics receive raw logits as expected.
+    """
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        probs = self.model(x).clamp(1e-6, 1 - 1e-6)
+        return torch.logit(probs)
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +118,7 @@ class SegDataset(torch.utils.data.Dataset):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="maffnet",
-                   choices=["maffnet", "attention_unet", "unetpp"],
+                   choices=["maffnet", "attention_unet", "unetpp", "unet", "transunet"],
                    help="Model architecture to train")
     p.add_argument("--dataset", default="ISIC_2018")
     p.add_argument("--data_root", default="dataset_split")
@@ -202,6 +219,32 @@ def main():
             train_loader=train_loader,
             val_loader=val_loader,
             model_name="unetpp",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "unet":
+        print("Building U-Net …")
+        model   = _LogitWrapper(UNet())
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="unet",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "transunet":
+        print("Building TransUNet …")
+        model   = TransUNet()
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="transunet",
             save_dir=args.save_dir,
             num_epochs=args.epochs,
             lr=args.lr,

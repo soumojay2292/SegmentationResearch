@@ -24,9 +24,10 @@ class PositionalEncoding2D(nn.Module):
             * -(torch.log(torch.tensor(10000.0, device=device)) / (C // 2))
         )
 
-        # ✅ Correct broadcasting
-        pe[0::2, :, :] = torch.sin(y_pos * div_term.unsqueeze(0)).unsqueeze(2).repeat(1, 1, W)
-        pe[1::2, :, :] = torch.cos(x_pos * div_term.unsqueeze(1)).unsqueeze(0).repeat(H, 1, 1)
+        # sin encodes row position: [H, C//2] → transpose → [C//2, H] → expand → [C//2, H, W]
+        pe[0::2, :, :] = torch.sin(y_pos * div_term.unsqueeze(0)).T.unsqueeze(-1).expand(-1, -1, W)
+        # cos encodes col position: [C//2, W] → unsqueeze → [C//2, 1, W] → expand → [C//2, H, W]
+        pe[1::2, :, :] = torch.cos(x_pos * div_term.unsqueeze(1)).unsqueeze(1).expand(-1, H, -1)
 
         return x + pe.unsqueeze(0)
 

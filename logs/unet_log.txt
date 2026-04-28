@@ -1,7 +1,8 @@
-usage: train.py [-h] [--model {maffnet,attention_unet,unetpp}]
-                [--dataset DATASET] [--data_root DATA_ROOT] [--epochs EPOCHS]
-                [--batch_size BATCH_SIZE] [--lr LR]
-                [--weight_decay WEIGHT_DECAY] [--img_size IMG_SIZE] [--fast]
-                [--workers WORKERS] [--checkpoint CHECKPOINT]
-                [--resume RESUME] [--save_dir SAVE_DIR] [--exp EXP]
-train.py: error: argument --model: invalid choice: 'unet' (choose from 'maffnet', 'attention_unet', 'unetpp')
+Traceback (most recent call last):
+  File "C:\Users\Soumojay\Desktop\New_Sm_P\SegmentationResearch\train.py", line 261, in <module>
+    main()
+  File "C:\Users\Soumojay\Desktop\New_Sm_P\SegmentationResearch\train.py", line 170, in main
+    print(f"Experiment \u2192 {exp_dir}")
+  File "C:\Users\Soumojay\miniconda3\envs\segmentation\lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 11: character maps to <undefined>
