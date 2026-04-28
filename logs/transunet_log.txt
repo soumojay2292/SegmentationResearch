@@ -1,0 +1,7 @@
+usage: train.py [-h] [--model {maffnet,attention_unet,unetpp}]
+                [--dataset DATASET] [--data_root DATA_ROOT] [--epochs EPOCHS]
+                [--batch_size BATCH_SIZE] [--lr LR]
+                [--weight_decay WEIGHT_DECAY] [--img_size IMG_SIZE] [--fast]
+                [--workers WORKERS] [--checkpoint CHECKPOINT]
+                [--resume RESUME] [--save_dir SAVE_DIR] [--exp EXP]
+train.py: error: argument --model: invalid choice: 'transunet' (choose from 'maffnet', 'attention_unet', 'unetpp')

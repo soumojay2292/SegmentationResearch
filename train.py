@@ -16,7 +16,10 @@ import numpy as np
 from tqdm import tqdm   # ✅ NEW
 
 from models.maffnet import MAFFNet
+from models.attention_unet import AttentionUNet
+from models.unet_plus_plus import UNetPlusPlus
 from training.trainer import MAFFNetTrainer
+from training.simple_trainer import SimpleTrainer
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +100,9 @@ class SegDataset(torch.utils.data.Dataset):
 
 def parse_args():
     p = argparse.ArgumentParser()
+    p.add_argument("--model", default="maffnet",
+                   choices=["maffnet", "attention_unet", "unetpp"],
+                   help="Model architecture to train")
     p.add_argument("--dataset", default="ISIC_2018")
     p.add_argument("--data_root", default="dataset_split")
     p.add_argument("--epochs", type=int, default=5)
@@ -120,8 +126,9 @@ def parse_args():
 
 def _write_config(exp_dir: Path, args) -> None:
     with open(exp_dir / "config.txt", "w") as f:
-        f.write(f"model:      MAFFNet\n")
-        f.write(f"backbone:   SAM2 Hiera-Large\n")
+        f.write(f"model:      {args.model}\n")
+        if args.model == "maffnet":
+            f.write(f"backbone:   SAM2 Hiera-Large\n")
         f.write(f"dataset:    {args.dataset}\n")
         f.write(f"epochs:     {args.epochs}\n")
         f.write(f"batch_size: {args.batch_size}\n")
@@ -162,18 +169,46 @@ def main():
     train_loader = make_loader("train", True)
     val_loader   = make_loader("val", False)
 
-    print("Building MAFFNet with SAM2 Hiera-Large backbone …")
-    model = MAFFNet(checkpoint=args.checkpoint)
-
-    trainer = MAFFNetTrainer(
-        model=model,
-        train_loader=train_loader,
-        val_loader=val_loader,
-        save_dir=args.save_dir,
-        num_epochs=args.epochs,
-        lr=args.lr,
-        weight_decay=args.weight_decay,
-    )
+    if args.model == "maffnet":
+        print("Building MAFFNet with SAM2 Hiera-Large backbone …")
+        model   = MAFFNet(checkpoint=args.checkpoint)
+        trainer = MAFFNetTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "attention_unet":
+        print("Building Attention U-Net …")
+        model   = AttentionUNet()
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="attention_unet",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "unetpp":
+        print("Building UNet++ …")
+        model   = UNetPlusPlus()
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="unetpp",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    else:
+        raise ValueError(f"Unknown model: {args.model}")
 
     trainer.train(config=vars(args), exp_dir=exp_dir)
     print("\nTraining finished.")
