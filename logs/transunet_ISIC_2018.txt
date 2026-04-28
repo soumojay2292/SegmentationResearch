@@ -1,0 +1,3 @@
+Building TransUNet …
+Training on cuda  |  20 epochs
+Total params: 0.4M

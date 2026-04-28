@@ -1,28 +1,65 @@
 import sys
-import torch
-from torch.optim import Adam
-from torch.utils.data import DataLoader
 import os
-import subprocess
-from datasets.seg_dataset import SegDataset
-from models.unet import UNet
-from models.maffnet import MAFFNet
-from models.transunet import TransUNet
-from training.trainer import Trainer
-from torch.utils.tensorboard import SummaryWriter
-import datetime
+sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(1, os.path.abspath("src/sam2"))
+
 import csv
-from torch.cuda.amp import GradScaler
-from segment_anything import sam_model_registry
+import json
+import datetime
+import subprocess
+import webbrowser
+import random
+from pathlib import Path
+
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+import torchvision.transforms as T
+import torchvision.transforms.functional as TF
+from torchvision.transforms import InterpolationMode
+from PIL import Image
+
 from models.maffnet import MAFFNet
 from models.attention_unet import AttentionUNet
-from models.unet_plus_plus import UNetPlusPlus as UNetPP
-import json
-import webbrowser
+from models.unet_plus_plus import UNetPlusPlus
+from models.unet import UNet
+from models.transunet import TransUNet
+from training.trainer import MAFFNetTrainer
+from training.simple_trainer import SimpleTrainer
 
 
 EPOCHS = 20
+MAFFNET_CHECKPOINT = "checkpoints/sam2_hiera_large.pt"
+DATASETS = ["ISIC_2016", "ISIC_2017", "ISIC_2018"]
 
+
+def safe_scalar(x) -> float:
+    """Convert any scalar-like value (tensor, list, tuple, float) to a Python float."""
+    if isinstance(x, (list, tuple)):
+        x = x[0]
+    if torch.is_tensor(x):
+        x = x.mean().item()
+    return float(x)
+
+
+# ---------------------------------------------------------------------------
+# LogitWrapper (same as train.py)
+# ---------------------------------------------------------------------------
+
+class _LogitWrapper(torch.nn.Module):
+    """Converts probability outputs (sigmoid already applied) to logits."""
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        probs = self.model(x).clamp(1e-6, 1 - 1e-6)
+        return torch.logit(probs)
+
+
+# ---------------------------------------------------------------------------
+# Logging tee
+# ---------------------------------------------------------------------------
 
 class _Tee:
     """Mirror stdout to both the console and a per-run log file."""
@@ -53,22 +90,79 @@ class _Tee:
             self._file.close()
 
 
-# Models to train
-def create_maffnet():
-    sam_encoder = sam_model_registry["vit_h"](checkpoint="sam_vit_h_4b8939.pth")
-    return MAFFNet(encoder=sam_encoder)
-print("Encoder loaded successfully!")
-MODELS = {
-    "unet":           lambda: UNet(),
-    "maffnet":        create_maffnet,
-    "transunet":      lambda: TransUNet(in_ch=3, out_ch=1, embed_dim=64, num_heads=2),
-    "attention_unet": lambda: AttentionUNet(),
-    "unetpp":         lambda: UNetPP(),
-}
+# ---------------------------------------------------------------------------
+# Dataset (same as train.py — uses csv_path + split convention)
+# ---------------------------------------------------------------------------
 
-# Datasets to train on
-DATASETS = ["ISIC_2016", "ISIC_2017", "ISIC_2018"]
+class SegDataset(torch.utils.data.Dataset):
+    def __init__(self, csv_path: str, split: str = "train", img_size: int = 384):
+        import csv as _csv
 
+        self.split    = split
+        self.img_size = img_size
+        self.samples  = []
+
+        dataset_root  = Path(csv_path).parent
+        self.img_dir  = dataset_root / self.split / "images"
+        self.mask_dir = dataset_root / self.split / "masks"
+
+        with open(csv_path) as f:
+            reader = _csv.DictReader(f)
+            for row in reader:
+                self.samples.append((row["image"], row["mask"]))
+
+    def _augment(self, img, mask):
+        if random.random() > 0.5:
+            img, mask = TF.hflip(img), TF.hflip(mask)
+        if random.random() > 0.5:
+            img, mask = TF.vflip(img), TF.vflip(mask)
+
+        angle = random.uniform(-30, 30)
+        img   = TF.rotate(img, angle, interpolation=InterpolationMode.BILINEAR)
+        mask  = TF.rotate(mask, angle, interpolation=InterpolationMode.NEAREST)
+
+        if random.random() > 0.5:
+            params = T.RandomAffine.get_params(
+                degrees=(-15, 15), translate=(0.1, 0.1),
+                scale_ranges=(0.9, 1.1), shears=(-5, 5),
+                img_size=[self.img_size, self.img_size]
+            )
+            img  = TF.affine(img,  *params, interpolation=InterpolationMode.BILINEAR)
+            mask = TF.affine(mask, *params, interpolation=InterpolationMode.NEAREST)
+
+        img = T.ColorJitter(0.2, 0.2, 0.2, 0.1)(img)
+        return img, mask
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        img_name, mask_name = self.samples[idx]
+
+        img_path  = self.img_dir / img_name
+        mask_path = self.mask_dir / mask_name
+
+        img  = Image.open(img_path).convert("RGB")
+        mask = Image.open(mask_path).convert("L")
+
+        img  = img.resize((self.img_size, self.img_size), Image.BILINEAR)
+        mask = mask.resize((self.img_size, self.img_size), Image.NEAREST)
+
+        if self.split == "train":
+            img, mask = self._augment(img, mask)
+
+        img_t  = T.ToTensor()(img)
+        mask_t = torch.from_numpy(
+            np.array(mask, dtype=np.float32) / 255.0
+        ).unsqueeze(0)
+
+        mask_t = (mask_t > 0.5).float()
+        return img_t, mask_t
+
+
+# ---------------------------------------------------------------------------
+# Dashboard generator
+# ---------------------------------------------------------------------------
 
 def _generate_dashboard(summary_csv: str, out_html: str) -> None:
     """Read summary.csv and write a self-contained HTML results dashboard."""
@@ -90,7 +184,6 @@ def _generate_dashboard(summary_csv: str, out_html: str) -> None:
 
     os.makedirs(os.path.dirname(out_html), exist_ok=True)
 
-    # Table rows — background tinted green→red by Dice score
     table_rows_html = ""
     for r in rows:
         dice = _safe_float(r.get("Final Val Dice"))
@@ -192,84 +285,161 @@ new Chart(document.getElementById("metricsChart"), {{
         f.write(html)
 
 
-def run_all():
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+def run_all():
+    timestamp   = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     results_dir = os.path.join("results", timestamp)
     os.makedirs(results_dir, exist_ok=True)
 
     summary_path = os.path.join(results_dir, "summary.csv")
     with open(summary_path, mode="w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Model", "Dataset", "Final Train Loss", "Final Val Loss", "Final Val Dice", "Final Val IoU", "Checkpoint Path"])
-
-
-
+        csv.writer(f).writerow([
+            "Model", "Dataset", "Final Train Loss",
+            "Final Val Loss", "Final Val Dice", "Final Val IoU",
+            "Checkpoint Path",
+        ])
 
     for dataset_name in DATASETS:
         print(f"\n📂 Starting dataset: {dataset_name}\n")
         base_path = f"dataset_split/{dataset_name}"
-        train_csv = f"{base_path}/train.csv"
-        val_csv   = f"{base_path}/val.csv"
 
-        train_ds = SegDataset(
-            train_csv,
-            f"{base_path}/train/images",
-            f"{base_path}/train/masks",
-            image_size=224
-        )
+        train_ds = SegDataset(f"{base_path}/train.csv", split="train", img_size=384)
+        val_ds   = SegDataset(f"{base_path}/val.csv",   split="val",   img_size=384)
 
-        val_ds = SegDataset(
-            val_csv,
-            f"{base_path}/val/images",
-            f"{base_path}/val/masks",
-            image_size=224
-        )
+        train_loader = DataLoader(train_ds, batch_size=2, shuffle=True,
+                                  num_workers=0, pin_memory=True)
+        val_loader   = DataLoader(val_ds,   batch_size=2, shuffle=False,
+                                  num_workers=0, pin_memory=True)
 
+        model_names = ["unet", "attention_unet", "unetpp", "transunet", "maffnet"]
 
-        train_loader = DataLoader(train_ds, batch_size=2, shuffle=True, num_workers=0, pin_memory=True)
-        val_loader   = DataLoader(val_ds, batch_size=2, shuffle=False, num_workers=0, pin_memory=True)
-
-        for model_name, model_fn in MODELS.items():
+        for model_name in model_names:
             print(f"\n===== {model_name} | {dataset_name} =====")
             print(f"🚀 Training {model_name} on {dataset_name}...\n")
 
             log_path = os.path.join("logs", f"{model_name}_{dataset_name}.txt")
+            exp_dir  = Path("experiments") / f"{model_name}_{dataset_name}_{timestamp}"
+            exp_dir.mkdir(parents=True, exist_ok=True)
+
+            save_dir = str(exp_dir / "checkpoints")
+
+            config = {
+                "model":      model_name,
+                "dataset":    dataset_name,
+                "epochs":     EPOCHS,
+                "batch_size": 2,
+                "lr":         1e-3,
+                "img_size":   384,
+            }
+
             try:
                 with _Tee(log_path):
-                    model = model_fn().to(device)
-                    optimizer = Adam(model.parameters(), lr=1e-4)
+                    if model_name == "maffnet":
+                        print("Building MAFFNet with SAM2 Hiera-Large backbone …")
+                        model   = MAFFNet(checkpoint=MAFFNET_CHECKPOINT)
+                        trainer = MAFFNetTrainer(
+                            model=model,
+                            train_loader=train_loader,
+                            val_loader=val_loader,
+                            save_dir=save_dir,
+                            num_epochs=EPOCHS,
+                            lr=1e-3,
+                            weight_decay=0.01,
+                        )
+                    elif model_name == "unet":
+                        print("Building U-Net …")
+                        model   = _LogitWrapper(UNet())
+                        trainer = SimpleTrainer(
+                            model=model,
+                            train_loader=train_loader,
+                            val_loader=val_loader,
+                            model_name="unet",
+                            save_dir=save_dir,
+                            num_epochs=EPOCHS,
+                            lr=1e-3,
+                            weight_decay=0.01,
+                        )
+                    elif model_name == "attention_unet":
+                        print("Building Attention U-Net …")
+                        model   = AttentionUNet()
+                        trainer = SimpleTrainer(
+                            model=model,
+                            train_loader=train_loader,
+                            val_loader=val_loader,
+                            model_name="attention_unet",
+                            save_dir=save_dir,
+                            num_epochs=EPOCHS,
+                            lr=1e-3,
+                            weight_decay=0.01,
+                        )
+                    elif model_name == "unetpp":
+                        print("Building UNet++ …")
+                        model   = UNetPlusPlus()
+                        trainer = SimpleTrainer(
+                            model=model,
+                            train_loader=train_loader,
+                            val_loader=val_loader,
+                            model_name="unetpp",
+                            save_dir=save_dir,
+                            num_epochs=EPOCHS,
+                            lr=1e-3,
+                            weight_decay=0.01,
+                        )
+                    elif model_name == "transunet":
+                        print("Building TransUNet …")
+                        model   = TransUNet()
+                        trainer = SimpleTrainer(
+                            model=model,
+                            train_loader=train_loader,
+                            val_loader=val_loader,
+                            model_name="transunet",
+                            save_dir=save_dir,
+                            num_epochs=EPOCHS,
+                            lr=1e-3,
+                            weight_decay=0.01,
+                        )
+                    else:
+                        raise ValueError(f"Unknown model: {model_name}")
 
-                    # Each run gets its own trainer + log directory
-                    trainer = Trainer(model, optimizer, device)
-                    trainer.scaler = GradScaler()
-                    trainer.writer = SummaryWriter(
-                        log_dir=f"runs/{model_name}_{dataset_name}"
-                    )
+                    trainer.train(config=config, exp_dir=exp_dir)
 
-                    train_loss = trainer.fit(train_loader, val_loader, num_epochs=EPOCHS)
+                    # Final validation pass to collect summary metrics
+                    if model_name == "maffnet":
+                        val_loss, val_metrics = trainer._val_epoch(epoch=0)
+                    else:
+                        val_loss, val_metrics = trainer._val_epoch()
 
-                    # Save checkpoint
-                    ckpt_path = os.path.join(results_dir, f"{model_name}_{dataset_name}.pth")
-                    torch.save(model.state_dict(), ckpt_path)
-                    print(f"✅ Saved checkpoint: {ckpt_path}\n")
+                    val_loss = safe_scalar(val_loss)
+                    val_dice = safe_scalar(val_metrics["dice"])
+                    val_iou  = safe_scalar(val_metrics["mIoU"])
 
-                    val_loss, val_dice, val_iou = trainer.evaluate_epoch(val_loader)
+                    ckpt_path = str(exp_dir / "model.pth")
+
+                    print(f"✅ Experiment saved: {exp_dir}\n")
+
                     with open(summary_path, mode="a", newline="") as f:
-                        writer = csv.writer(f)
-                        writer.writerow([model_name, dataset_name, train_loss, val_loss, val_dice, val_iou, ckpt_path])
+                        csv.writer(f).writerow([
+                            model_name, dataset_name,
+                            "N/A",
+                            f"{val_loss:.4f}",
+                            f"{val_dice:.4f}",
+                            f"{val_iou:.4f}",
+                            ckpt_path,
+                        ])
 
-                    # Per-run structured metrics
                     metrics = {
-                        "model":      model_name,
-                        "dataset":    dataset_name,
-                        "train_loss": float(train_loss) if train_loss is not None else None,
-                        "val_loss":   float(val_loss)   if val_loss   is not None else None,
-                        "dice":       float(val_dice)   if val_dice   is not None else None,
-                        "iou":        float(val_iou)    if val_iou    is not None else None,
+                        "model":    model_name,
+                        "dataset":  dataset_name,
+                        "val_loss": val_loss,
+                        "dice":     val_dice,
+                        "iou":      val_iou,
                     }
-                    json_path = os.path.join(results_dir, f"{model_name}_{dataset_name}_metrics.json")
+                    json_path = os.path.join(
+                        results_dir, f"{model_name}_{dataset_name}_metrics.json"
+                    )
                     with open(json_path, "w", encoding="utf-8") as jf:
                         json.dump(metrics, jf, indent=2)
 
@@ -298,7 +468,6 @@ def run_all():
     except Exception as _dash_err:
         print(f"[WARN] Dashboard generation failed: {_dash_err}")
 
-    # ✅ Launch TensorBoard automatically
     print("\n📊 Launching TensorBoard...")
     subprocess.Popen(["tensorboard", "--logdir", "runs"])
 

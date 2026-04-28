@@ -18,12 +18,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Tuple
-from sam2.build_sam import build_sam2 
-import sys
-from pathlib import Path
-_SAM2_REPO = str(Path("src/sam2").resolve())
-if _SAM2_REPO not in sys.path:
-    sys.path.insert(0, _SAM2_REPO)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -187,49 +181,82 @@ class RDB(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# SAM2 Hiera-Large backbone wrapper
+# SAM2 Hiera backbone wrapper  (used when checkpoint= path is given)
 # ---------------------------------------------------------------------------
-class SAM2HieraEncoder(nn.Module):
-    STAGE_DIMS: list = [256, 256, 256, 256] 
-    def __init__(
-        self,
-        config_path: str = "src/sam2/sam2/configs/sam2/sam2_hiera_l.yaml",
-        checkpoint:  str = "sam2_hiera_large.pt",
-        device:      str = "cpu",
-    ):
+class SAM2Encoder(nn.Module):
+    """
+    Wraps a SAM2 ImageEncoder module (Hiera trunk + FPN neck) to produce
+    4 multi-scale feature maps compatible with MAFFNet.
+
+    SAM2 Hiera-Large with scalp=1 yields 3 FPN outputs:
+        backbone_fpn[0] : highest res  (~stride 4)
+        backbone_fpn[1] : mid res      (~stride 8)
+        backbone_fpn[2] : low res      (~stride 16)   ← vision_features
+    We derive a 4th scale by halving backbone_fpn[2].
+    All outputs are 256-channel (FPN d_model).
+    """
+    channels: list = [256, 256, 256, 256]
+
+    def __init__(self, image_encoder: nn.Module):
         super().__init__()
-        from models.sam2_loader import load_sam2_encoder
-        self.encoder      = load_sam2_encoder(config_path, checkpoint, device)
-        self.out_channels = self.STAGE_DIMS
-        self.channels     = self.STAGE_DIMS 
+        self.encoder      = image_encoder
+        self.out_channels = self.channels
         for p in self.encoder.parameters():
             p.requires_grad_(False)
 
     def forward(self, x: torch.Tensor):
         with torch.no_grad():
             out = self.encoder(x)
-        # normalise output format across SAM2 versions
+
         if isinstance(out, dict):
-            maps = out.get("backbone_fpn", out.get("vision_features",
-                   list(out.values())))
-        elif isinstance(out, (list, tuple)):
-            maps = list(out)
+            features = out["backbone_fpn"]   # list ordered high→low res
         else:
-            maps = [out]
-        # --- Adapt SAM2 outputs dynamically ---
-        if len(maps) == 3:
-            f2, f3, f4 = maps
+            # Fallback: single tensor → synthesise 4 scales via upsampling
+            feat = out
+            f1 = F.interpolate(feat, scale_factor=8.0, mode='bilinear', align_corners=False)
+            f2 = F.interpolate(feat, scale_factor=4.0, mode='bilinear', align_corners=False)
+            f3 = F.interpolate(feat, scale_factor=2.0, mode='bilinear', align_corners=False)
+            return f1, f2, f3, feat
 
-            # Create shallow feature (f1) by upsampling f2
-            f1 = F.interpolate(f2, scale_factor=2, mode='bilinear', align_corners=False)
-
-        elif len(maps) >= 4:
-            f1, f2, f3, f4 = maps[:4]
-
+        n = len(features)
+        if n >= 4:
+            return features[0], features[1], features[2], features[3]
+        elif n == 3:
+            f4 = F.interpolate(features[2], scale_factor=0.5,
+                               mode='bilinear', align_corners=False)
+            return features[0], features[1], features[2], f4
         else:
-            raise ValueError(f"[SAM2] Too few feature maps: {len(maps)}")
+            # Fewer than expected — upsample from the coarsest available
+            feat = features[-1]
+            f1   = F.interpolate(feat, scale_factor=4.0, mode='bilinear', align_corners=False)
+            f2   = F.interpolate(feat, scale_factor=2.0, mode='bilinear', align_corners=False)
+            f3   = feat
+            f4   = F.interpolate(feat, scale_factor=0.5, mode='bilinear', align_corners=False)
+            return f1, f2, f3, f4
 
 
+# ---------------------------------------------------------------------------
+# SAM ViT-H backbone wrapper  (used when encoder= object is passed directly)
+# ---------------------------------------------------------------------------
+class SAMEncoder(nn.Module):
+    """Wraps SAM ViT-H image_encoder to produce 4 multi-scale feature maps."""
+    channels: list = [256, 256, 256, 256]
+
+    def __init__(self, sam_model):
+        super().__init__()
+        self.encoder = sam_model.image_encoder
+        self.out_channels = self.channels
+        for p in self.encoder.parameters():
+            p.requires_grad_(False)
+
+    def forward(self, x: torch.Tensor):
+        with torch.no_grad():
+            feat = self.encoder(x)          # [B, 256, H/16, W/16]
+        # Build 4 scales: f1 largest (stride 2) → f4 smallest (stride 16)
+        f4 = feat
+        f3 = F.interpolate(feat, scale_factor=2.0, mode='bilinear', align_corners=False)
+        f2 = F.interpolate(feat, scale_factor=4.0, mode='bilinear', align_corners=False)
+        f1 = F.interpolate(feat, scale_factor=8.0, mode='bilinear', align_corners=False)
         return f1, f2, f3, f4
 
 # ---------------------------------------------------------------------------
@@ -244,17 +271,26 @@ class MAFFNet(nn.Module):
             rec              – (B, 3, 384, 384)        [Tanh, ≈[-1,1]]
     """
 
-    def __init__(self, checkpoint: str = None):
+    def __init__(self, encoder=None, checkpoint: str = None):
         super().__init__()
 
         # ---------- Backbone ----------
-        self.backbone = SAM2HieraEncoder(
-        config_path="src/sam2/sam2/configs/sam2/sam2_hiera_l.yaml",
-        checkpoint=checkpoint,
-        device="cuda" if torch.cuda.is_available() else "cpu"
-    )
+        if encoder is not None:
+            # Caller already constructed a SAM model object — wrap its image_encoder
+            self.backbone = SAMEncoder(encoder)
+        elif checkpoint is not None:
+            # Load SAM2 Hiera-Large via the project's sam2_loader (no segment_anything needed)
+            from models.sam2_loader import load_sam2_encoder
+            image_encoder = load_sam2_encoder(
+                config_path="src/sam2/sam2/configs/sam2/sam2_hiera_l.yaml",
+                checkpoint=checkpoint,
+                device="cpu",
+            )
+            self.backbone = SAM2Encoder(image_encoder)
+        else:
+            raise ValueError("Provide either 'encoder' (a SAM model) or 'checkpoint' (path to .pth).")
         print("Encoder type:", type(self.backbone.encoder))
-        c1, c2, c3, c4 = self.backbone.channels   # 144, 288, 576, 1152
+        c1, c2, c3, c4 = self.backbone.channels   # all 256 for SAM ViT-H
 
         # ---------- MMPA per level ----------
         self.mmpa1 = MMPA(c1)

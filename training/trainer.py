@@ -40,9 +40,9 @@ class DiceLoss(nn.Module):
         flat_p = probs.flatten(1)
         flat_t = targets.flatten(1)
         inter  = (flat_p * flat_t).sum(1)
-        return 1.0 - (2.0 * inter + self.smooth) / (
+        return (1.0 - (2.0 * inter + self.smooth) / (
             flat_p.sum(1) + flat_t.sum(1) + self.smooth
-        ).mean()
+        )).mean()
 
 
 class BoundaryLoss(nn.Module):
@@ -495,3 +495,138 @@ class MAFFNetTrainer:
         for k, v in results.items():
             print(f"  {k:<14}: {v:.4f}")
         return results
+
+
+# ---------------------------------------------------------------------------
+# General-purpose Trainer  (used by train_all.py for all models)
+# ---------------------------------------------------------------------------
+
+class Trainer:
+    """
+    Lightweight trainer compatible with all segmentation models.
+
+    Handles both single-tensor outputs (logits) and MAFFNet's 5-tuple
+    (p1, p2, p3, p4, rec).  Reuses DiceLoss / MAFFNetLoss / compute_metrics
+    defined above so there is no duplicated logic.
+
+    Interface expected by train_all.py:
+        trainer = Trainer(model, optimizer, device)
+        trainer.scaler = GradScaler()          # optional override
+        trainer.writer = SummaryWriter(...)    # optional TensorBoard
+        train_loss = trainer.fit(train_loader, val_loader, num_epochs=N)
+        val_loss, val_dice, val_iou = trainer.evaluate_epoch(val_loader)
+    """
+
+    def __init__(self, model: nn.Module, optimizer, device):
+        self.model        = model.to(device)
+        self.optimizer    = optimizer
+        self.device       = device
+        self._device_type = "cuda" if "cuda" in str(device) else "cpu"
+
+        # Defaults — callers may replace these after construction
+        self.scaler = GradScaler(self._device_type)
+        self.writer = None  # optional SummaryWriter
+
+        self._dice_loss    = DiceLoss()
+        self._maffnet_loss = MAFFNetLoss().to(device)
+        self._bce          = nn.BCEWithLogitsLoss()
+
+    # ------------------------------------------------------------------
+    def _forward(
+        self, imgs: torch.Tensor, masks: torch.Tensor, epoch: int = 0
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass + loss. Returns (loss, primary_logits)."""
+        with autocast(self._device_type):
+            output = self.model(imgs)
+
+            if isinstance(output, tuple):
+                # MAFFNet: (p1, p2, p3, p4, rec)
+                loss, _ = self._maffnet_loss(output, masks, epoch=epoch)
+                logits  = output[0]
+            else:
+                logits  = output
+                prob    = torch.sigmoid(logits)
+                loss    = self._bce(logits, masks) + self._dice_loss(prob, masks)
+
+        return loss, logits
+
+    # ------------------------------------------------------------------
+    def fit(
+        self,
+        train_loader: DataLoader,
+        val_loader:   DataLoader,
+        num_epochs:   int,
+    ) -> float:
+        """Train for num_epochs. Returns the final epoch's average train loss."""
+        final_train_loss = 0.0
+
+        for epoch in range(num_epochs):
+            self.model.train()
+            total_loss, n = 0.0, 0
+
+            pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=False)
+            for imgs, masks in pbar:
+                imgs  = imgs.to(self.device)
+                masks = masks.to(self.device).float()
+                if masks.ndim == 3:
+                    masks = masks.unsqueeze(1)
+
+                self.optimizer.zero_grad(set_to_none=True)
+                loss, _ = self._forward(imgs, masks, epoch=epoch)
+
+                self.scaler.scale(loss).backward()
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(
+                    [p for p in self.model.parameters() if p.requires_grad], 1.0
+                )
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+
+                bs          = imgs.size(0)
+                total_loss += loss.item() * bs
+                n          += bs
+                pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+            epoch_loss       = total_loss / max(n, 1)
+            final_train_loss = epoch_loss
+
+            val_loss, val_dice, val_iou = self.evaluate_epoch(val_loader)
+            print(
+                f"  Ep {epoch+1:>3}/{num_epochs}  "
+                f"train={epoch_loss:.4f}  val={val_loss:.4f}  "
+                f"dice={val_dice:.4f}  iou={val_iou:.4f}"
+            )
+
+            if self.writer is not None:
+                self.writer.add_scalar("Loss/train", epoch_loss, epoch)
+                self.writer.add_scalar("Loss/val",   val_loss,   epoch)
+                self.writer.add_scalar("Dice/val",   val_dice,   epoch)
+                self.writer.add_scalar("IoU/val",    val_iou,    epoch)
+
+        return final_train_loss
+
+    # ------------------------------------------------------------------
+    @torch.no_grad()
+    def evaluate_epoch(self, val_loader: DataLoader) -> Tuple[float, float, float]:
+        """Evaluate one pass over val_loader. Returns (val_loss, val_dice, val_iou)."""
+        self.model.eval()
+        total_loss = dice_sum = iou_sum = 0.0
+        n = 0
+
+        for imgs, masks in val_loader:
+            imgs  = imgs.to(self.device)
+            masks = masks.to(self.device).float()
+            if masks.ndim == 3:
+                masks = masks.unsqueeze(1)
+
+            loss, logits = self._forward(imgs, masks)
+
+            bs          = imgs.size(0)
+            total_loss += loss.item() * bs
+            m           = compute_metrics(logits, masks)
+            dice_sum   += m["dice"] * bs
+            iou_sum    += m["mIoU"] * bs
+            n          += bs
+
+        denom = max(n, 1)
+        return total_loss / denom, dice_sum / denom, iou_sum / denom
