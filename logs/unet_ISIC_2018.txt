@@ -1,3 +1,30 @@
 Building U-Net …
 Training on cuda  |  20 epochs
 Total params: 3.9M
+  Ep 001/20  lr=1.00e-03  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [391s]
+  Ep 002/20  lr=9.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [378s]
+  Ep 003/20  lr=9.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [381s]
+  Ep 004/20  lr=8.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [388s]
+  Ep 005/20  lr=8.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [385s]
+  Ep 006/20  lr=7.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [381s]
+  Ep 007/20  lr=7.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [380s]
+  Ep 008/20  lr=6.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [379s]
+  Ep 009/20  lr=6.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [380s]
+  Ep 010/20  lr=5.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [380s]
+  Ep 011/20  lr=5.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [378s]
+  Ep 012/20  lr=4.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [379s]
+  Ep 013/20  lr=4.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [379s]
+  Ep 014/20  lr=3.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [380s]
+  Ep 015/20  lr=3.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [380s]
+  Ep 016/20  lr=2.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [379s]
+  Ep 017/20  lr=2.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [378s]
+  Ep 018/20  lr=1.50e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [389s]
+  Ep 019/20  lr=1.00e-04  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [380s]
+  Ep 020/20  lr=5.00e-05  train=nan  val=nan  dice=0.0000  mIoU=0.0000  [382s]
+
+Training complete. Best val dice: 0.0000
+[trainer] Saved 5 prediction samples → experiments\unet_ISIC_2018_2026-04-28_15-19-03\samples
+[report] Saved → results\dashboard\report.html
+[exp] Experiment saved → experiments\unet_ISIC_2018_2026-04-28_15-19-03
+✅ Experiment saved: experiments\unet_ISIC_2018_2026-04-28_15-19-03
+

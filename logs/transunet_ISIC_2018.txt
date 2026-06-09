@@ -1,3 +1,44 @@
 Building TransUNet …
 Training on cuda  |  20 epochs
 Total params: 0.4M
+  Ep 001/20  lr=1.00e-03  train=0.8044  val=0.7395  dice=0.7740  mIoU=0.6563  [1708s]
+  ↑ New best dice=0.7740 → best_transunet.pth
+  Ep 002/20  lr=9.50e-04  train=0.6497  val=0.5718  dice=0.7880  mIoU=0.6761  [1708s]
+  ↑ New best dice=0.7880 → best_transunet.pth
+  Ep 003/20  lr=9.00e-04  train=0.5789  val=0.5478  dice=0.8131  mIoU=0.7142  [1703s]
+  ↑ New best dice=0.8131 → best_transunet.pth
+  Ep 004/20  lr=8.50e-04  train=0.5411  val=0.4361  dice=0.8202  mIoU=0.7219  [1704s]
+  ↑ New best dice=0.8202 → best_transunet.pth
+  Ep 005/20  lr=8.00e-04  train=0.4903  val=0.6561  dice=0.8053  mIoU=0.7059  [1704s]
+  Ep 006/20  lr=7.50e-04  train=0.4696  val=0.4092  dice=0.8403  mIoU=0.7464  [1703s]
+  ↑ New best dice=0.8403 → best_transunet.pth
+  Ep 007/20  lr=7.00e-04  train=0.4523  val=0.4581  dice=0.8532  mIoU=0.7649  [1705s]
+  ↑ New best dice=0.8532 → best_transunet.pth
+  Ep 008/20  lr=6.50e-04  train=0.4454  val=0.4185  dice=0.8323  mIoU=0.7284  [1701s]
+  Ep 009/20  lr=6.00e-04  train=0.4394  val=0.4429  dice=0.8540  mIoU=0.7695  [1703s]
+  ↑ New best dice=0.8540 → best_transunet.pth
+  Ep 010/20  lr=5.50e-04  train=0.4252  val=0.3688  dice=0.8575  mIoU=0.7685  [1703s]
+  ↑ New best dice=0.8575 → best_transunet.pth
+  Ep 011/20  lr=5.00e-04  train=0.4111  val=0.4244  dice=0.8606  mIoU=0.7761  [1702s]
+  ↑ New best dice=0.8606 → best_transunet.pth
+  Ep 012/20  lr=4.50e-04  train=0.4029  val=0.3699  dice=0.8644  mIoU=0.7806  [1708s]
+  ↑ New best dice=0.8644 → best_transunet.pth
+  Ep 013/20  lr=4.00e-04  train=0.3886  val=0.3840  dice=0.8538  mIoU=0.7642  [1704s]
+  Ep 014/20  lr=3.50e-04  train=0.4065  val=0.3637  dice=0.8639  mIoU=0.7814  [1700s]
+  Ep 015/20  lr=3.00e-04  train=0.3852  val=0.3508  dice=0.8676  mIoU=0.7841  [1702s]
+  ↑ New best dice=0.8676 → best_transunet.pth
+  Ep 016/20  lr=2.50e-04  train=0.3778  val=0.3676  dice=0.8689  mIoU=0.7871  [1702s]
+  ↑ New best dice=0.8689 → best_transunet.pth
+  Ep 017/20  lr=2.00e-04  train=0.3611  val=0.3578  dice=0.8685  mIoU=0.7854  [1702s]
+  Ep 018/20  lr=1.50e-04  train=0.3682  val=0.3434  dice=0.8703  mIoU=0.7886  [1704s]
+  ↑ New best dice=0.8703 → best_transunet.pth
+  Ep 019/20  lr=1.00e-04  train=0.3572  val=0.3518  dice=0.8675  mIoU=0.7868  [1700s]
+  Ep 020/20  lr=5.00e-05  train=0.3394  val=0.3446  dice=0.8716  mIoU=0.7903  [1700s]
+  ↑ New best dice=0.8716 → best_transunet.pth
+
+Training complete. Best val dice: 0.8716
+[trainer] Saved 5 prediction samples → experiments\transunet_ISIC_2018_2026-04-28_15-19-03\samples
+[report] Saved → results\dashboard\report.html
+[exp] Experiment saved → experiments\transunet_ISIC_2018_2026-04-28_15-19-03
+✅ Experiment saved: experiments\transunet_ISIC_2018_2026-04-28_15-19-03
+

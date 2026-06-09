@@ -1,1 +1,41 @@
 Building MAFFNet with SAM2 Hiera-Large backbone …
+[SAM2] 146 missing keys (expected for encoder-only use)
+[SAM2] 146 unexpected keys
+Encoder type: <class 'sam2.modeling.backbones.image_encoder.ImageEncoder'>
+Training on cuda  |  20 epochs
+Trainable params: 22.0M  /  Total: 234.7M
+  Ep 001/20  lr=1.00e-03  train=0.5647  val=0.4173  dice=0.8915  mIoU=0.8115  [133s]
+  ↑ New best dice=0.8915 → best_maffnet.pth
+  Ep 002/20  lr=9.50e-04  train=0.4146  val=0.4534  dice=0.8829  mIoU=0.8045  [131s]
+  Ep 003/20  lr=9.00e-04  train=0.3806  val=0.3148  dice=0.9039  mIoU=0.8304  [132s]
+  ↑ New best dice=0.9039 → best_maffnet.pth
+  Ep 004/20  lr=8.50e-04  train=0.3358  val=0.2658  dice=0.9094  mIoU=0.8399  [132s]
+  ↑ New best dice=0.9094 → best_maffnet.pth
+  Ep 005/20  lr=8.00e-04  train=0.3187  val=0.2825  dice=0.9209  mIoU=0.8561  [133s]
+  ↑ New best dice=0.9209 → best_maffnet.pth
+  Ep 006/20  lr=7.50e-04  train=0.2860  val=0.3441  dice=0.9080  mIoU=0.8370  [132s]
+  Ep 007/20  lr=7.00e-04  train=0.2862  val=0.2441  dice=0.9213  mIoU=0.8586  [131s]
+  ↑ New best dice=0.9213 → best_maffnet.pth
+  Ep 008/20  lr=6.50e-04  train=0.2619  val=0.2654  dice=0.9196  mIoU=0.8549  [133s]
+  Ep 009/20  lr=6.00e-04  train=0.2603  val=0.2392  dice=0.9221  mIoU=0.8594  [132s]
+  ↑ New best dice=0.9221 → best_maffnet.pth
+  Ep 010/20  lr=5.50e-04  train=0.2535  val=0.2482  dice=0.9228  mIoU=0.8601  [132s]
+  ↑ New best dice=0.9228 → best_maffnet.pth
+  Ep 011/20  lr=5.00e-04  train=0.2752  val=0.2447  dice=0.9225  mIoU=0.8598  [130s]
+  Ep 012/20  lr=4.50e-04  train=0.2474  val=0.2460  dice=0.9207  mIoU=0.8569  [130s]
+  Ep 013/20  lr=4.00e-04  train=0.2521  val=0.2461  dice=0.9194  mIoU=0.8548  [131s]
+  Ep 014/20  lr=3.50e-04  train=0.2672  val=0.2510  dice=0.9165  mIoU=0.8500  [130s]
+  Ep 015/20  lr=3.00e-04  train=0.2776  val=0.2448  dice=0.9211  mIoU=0.8574  [129s]
+  Ep 016/20  lr=2.50e-04  train=0.2623  val=0.2432  dice=0.9229  mIoU=0.8604  [131s]
+  ↑ New best dice=0.9229 → best_maffnet.pth
+  Ep 017/20  lr=2.00e-04  train=0.2579  val=0.2459  dice=0.9216  mIoU=0.8582  [130s]
+  Ep 018/20  lr=1.50e-04  train=0.2586  val=0.2434  dice=0.9216  mIoU=0.8582  [131s]
+  Ep 019/20  lr=1.00e-04  train=0.2546  val=0.2505  dice=0.9227  mIoU=0.8601  [130s]
+  Ep 020/20  lr=5.00e-05  train=0.2636  val=0.2445  dice=0.9216  mIoU=0.8582  [130s]
+
+Training complete. Best val dice: 0.9229
+[trainer] Saved 5 prediction samples → experiments\maffnet_ISIC_2016_2026-04-28_15-19-03\samples
+[report] Saved → results\dashboard\report.html
+[exp] Experiment saved → experiments\maffnet_ISIC_2016_2026-04-28_15-19-03
+✅ Experiment saved: experiments\maffnet_ISIC_2016_2026-04-28_15-19-03
+

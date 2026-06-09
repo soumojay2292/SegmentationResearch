@@ -1,3 +1,40 @@
 Building Attention U-Net …
 Training on cuda  |  20 epochs
 Total params: 31.4M
+  Ep 001/20  lr=1.00e-03  train=0.9575  val=0.9133  dice=0.7188  mIoU=0.5979  [104s]
+  ↑ New best dice=0.7188 → best_attention_unet.pth
+  Ep 002/20  lr=9.50e-04  train=0.8561  val=0.9259  dice=0.7294  mIoU=0.6086  [104s]
+  ↑ New best dice=0.7294 → best_attention_unet.pth
+  Ep 003/20  lr=9.00e-04  train=0.7643  val=0.6867  dice=0.7891  mIoU=0.6832  [103s]
+  ↑ New best dice=0.7891 → best_attention_unet.pth
+  Ep 004/20  lr=8.50e-04  train=0.7344  val=0.7309  dice=0.7966  mIoU=0.6887  [103s]
+  ↑ New best dice=0.7966 → best_attention_unet.pth
+  Ep 005/20  lr=8.00e-04  train=0.6701  val=0.7577  dice=0.7932  mIoU=0.6821  [104s]
+  Ep 006/20  lr=7.50e-04  train=0.6400  val=0.8299  dice=0.7568  mIoU=0.6438  [106s]
+  Ep 007/20  lr=7.00e-04  train=0.6100  val=0.6820  dice=0.8145  mIoU=0.7084  [103s]
+  ↑ New best dice=0.8145 → best_attention_unet.pth
+  Ep 008/20  lr=6.50e-04  train=0.5926  val=0.6400  dice=0.8130  mIoU=0.7142  [107s]
+  Ep 009/20  lr=6.00e-04  train=0.5817  val=0.5936  dice=0.8249  mIoU=0.7278  [106s]
+  ↑ New best dice=0.8249 → best_attention_unet.pth
+  Ep 010/20  lr=5.50e-04  train=0.5563  val=0.6429  dice=0.8262  mIoU=0.7261  [104s]
+  ↑ New best dice=0.8262 → best_attention_unet.pth
+  Ep 011/20  lr=5.00e-04  train=0.5332  val=0.5938  dice=0.8443  mIoU=0.7489  [104s]
+  ↑ New best dice=0.8443 → best_attention_unet.pth
+  Ep 012/20  lr=4.50e-04  train=0.4768  val=0.5921  dice=0.8311  mIoU=0.7332  [104s]
+  Ep 013/20  lr=4.00e-04  train=0.4668  val=0.7868  dice=0.7718  mIoU=0.6583  [103s]
+  Ep 014/20  lr=3.50e-04  train=0.4399  val=0.5499  dice=0.8421  mIoU=0.7449  [102s]
+  Ep 015/20  lr=3.00e-04  train=0.4243  val=0.6263  dice=0.8298  mIoU=0.7308  [104s]
+  Ep 016/20  lr=2.50e-04  train=0.4253  val=0.6176  dice=0.8331  mIoU=0.7351  [104s]
+  Ep 017/20  lr=2.00e-04  train=0.3997  val=0.5689  dice=0.8429  mIoU=0.7464  [104s]
+  Ep 018/20  lr=1.50e-04  train=0.3997  val=0.5186  dice=0.8557  mIoU=0.7659  [103s]
+  ↑ New best dice=0.8557 → best_attention_unet.pth
+  Ep 019/20  lr=1.00e-04  train=0.3751  val=0.5422  dice=0.8550  mIoU=0.7647  [104s]
+  Ep 020/20  lr=5.00e-05  train=0.3851  val=0.4693  dice=0.8663  mIoU=0.7782  [104s]
+  ↑ New best dice=0.8663 → best_attention_unet.pth
+
+Training complete. Best val dice: 0.8663
+[trainer] Saved 5 prediction samples → experiments\attention_unet_ISIC_2016_2026-04-28_15-19-03\samples
+[report] Saved → results\dashboard\report.html
+[exp] Experiment saved → experiments\attention_unet_ISIC_2016_2026-04-28_15-19-03
+✅ Experiment saved: experiments\attention_unet_ISIC_2016_2026-04-28_15-19-03
+

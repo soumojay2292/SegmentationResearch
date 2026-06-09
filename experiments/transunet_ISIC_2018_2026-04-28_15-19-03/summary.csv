@@ -1,0 +1,15 @@
+metric,value
+val_loss,0.3446
+acc,0.9504
+dice,0.8716
+mIoU,0.7903
+sensitivity,0.8989
+specificity,0.9583
+f1,0.8716
+best_dice,0.8716
+model,transunet
+dataset,ISIC_2018
+epochs,20
+batch_size,2
+lr,0.001
+img_size,384

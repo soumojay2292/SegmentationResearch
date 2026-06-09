@@ -1,3 +1,32 @@
 Building TransUNet …
 Training on cuda  |  20 epochs
 Total params: 0.4M
+  Ep 001/20  lr=1.00e-03  train=0.7648  val=1.9500  dice=0.3160  mIoU=0.2218  [1750s]
+  ↑ New best dice=0.3160 → best_transunet.pth
+  Ep 002/20  lr=9.50e-04  train=0.8960  val=1.1045  dice=0.5215  mIoU=0.3885  [1738s]
+  ↑ New best dice=0.5215 → best_transunet.pth
+  Ep 003/20  lr=9.00e-04  train=1.3301  val=1.7434  dice=0.3424  mIoU=0.2312  [1723s]
+  Ep 004/20  lr=8.50e-04  train=1.2955  val=2.1804  dice=0.1822  mIoU=0.1181  [1721s]
+  Ep 005/20  lr=8.00e-04  train=1.4020  val=1.8462  dice=0.2675  mIoU=0.1752  [1721s]
+  Ep 006/20  lr=7.50e-04  train=1.4275  val=1.4797  dice=0.1767  mIoU=0.1059  [1721s]
+  Ep 007/20  lr=7.00e-04  train=1.4461  val=1.4873  dice=0.0000  mIoU=0.0000  [1719s]
+  Ep 008/20  lr=6.50e-04  train=1.4499  val=1.4836  dice=0.2000  mIoU=0.1140  [1719s]
+  Ep 009/20  lr=6.00e-04  train=1.5517  val=1.5448  dice=0.1405  mIoU=0.0831  [1719s]
+  Ep 010/20  lr=5.50e-04  train=1.5058  val=10.9760  dice=0.2656  mIoU=0.1737  [1719s]
+  Ep 011/20  lr=5.00e-04  train=1.4888  val=1.5988  dice=0.3214  mIoU=0.2211  [1719s]
+  Ep 012/20  lr=4.50e-04  train=1.5215  val=2.2402  dice=0.2675  mIoU=0.1752  [1722s]
+  Ep 013/20  lr=4.00e-04  train=1.4217  val=2.7497  dice=0.2675  mIoU=0.1752  [1723s]
+  Ep 014/20  lr=3.50e-04  train=1.3658  val=2.3382  dice=0.2675  mIoU=0.1752  [1723s]
+  Ep 015/20  lr=3.00e-04  train=1.3674  val=2.4621  dice=0.2675  mIoU=0.1752  [1724s]
+  Ep 016/20  lr=2.50e-04  train=1.3914  val=2.3476  dice=0.2675  mIoU=0.1752  [1724s]
+  Ep 017/20  lr=2.00e-04  train=1.3878  val=2.4227  dice=0.2675  mIoU=0.1752  [1723s]
+  Ep 018/20  lr=1.50e-04  train=1.3959  val=2.3172  dice=0.2675  mIoU=0.1752  [1722s]
+  Ep 019/20  lr=1.00e-04  train=1.4051  val=2.1900  dice=0.2675  mIoU=0.1752  [1723s]
+  Ep 020/20  lr=5.00e-05  train=1.4026  val=2.2276  dice=0.2675  mIoU=0.1752  [1723s]
+
+Training complete. Best val dice: 0.5215
+[trainer] Saved 5 prediction samples → experiments\transunet_ISIC_2017_2026-04-28_15-19-03\samples
+[report] Saved → results\dashboard\report.html
+[exp] Experiment saved → experiments\transunet_ISIC_2017_2026-04-28_15-19-03
+✅ Experiment saved: experiments\transunet_ISIC_2017_2026-04-28_15-19-03
+

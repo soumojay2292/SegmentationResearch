@@ -1,1 +1,16 @@
 Model,Dataset,Final Train Loss,Final Val Loss,Final Val Dice,Final Val IoU,Checkpoint Path
+unet,ISIC_2016,N/A,nan,0.0000,0.0000,experiments\unet_ISIC_2016_2026-04-28_15-19-03\model.pth
+attention_unet,ISIC_2016,N/A,0.4693,0.8663,0.7782,experiments\attention_unet_ISIC_2016_2026-04-28_15-19-03\model.pth
+unetpp,ISIC_2016,N/A,0.6884,0.8059,0.7017,experiments\unetpp_ISIC_2016_2026-04-28_15-19-03\model.pth
+transunet,ISIC_2016,N/A,0.8337,0.7714,0.6534,experiments\transunet_ISIC_2016_2026-04-28_15-19-03\model.pth
+maffnet,ISIC_2016,N/A,0.2441,0.9216,0.8582,experiments\maffnet_ISIC_2016_2026-04-28_15-19-03\model.pth
+unet,ISIC_2017,N/A,nan,0.0000,0.0000,experiments\unet_ISIC_2017_2026-04-28_15-19-03\model.pth
+attention_unet,ISIC_2017,N/A,0.9249,0.6630,0.5474,experiments\attention_unet_ISIC_2017_2026-04-28_15-19-03\model.pth
+unetpp,ISIC_2017,N/A,0.9022,0.6573,0.5385,experiments\unetpp_ISIC_2017_2026-04-28_15-19-03\model.pth
+transunet,ISIC_2017,N/A,2.2276,0.2675,0.1752,experiments\transunet_ISIC_2017_2026-04-28_15-19-03\model.pth
+maffnet,ISIC_2017,N/A,0.6590,0.7824,0.6811,experiments\maffnet_ISIC_2017_2026-04-28_15-19-03\model.pth
+unet,ISIC_2018,N/A,nan,0.0000,0.0000,experiments\unet_ISIC_2018_2026-04-28_15-19-03\model.pth
+attention_unet,ISIC_2018,N/A,0.6120,0.7638,0.6607,experiments\attention_unet_ISIC_2018_2026-04-28_15-19-03\model.pth
+unetpp,ISIC_2018,N/A,0.8693,0.6838,0.5713,experiments\unetpp_ISIC_2018_2026-04-28_15-19-03\model.pth
+transunet,ISIC_2018,N/A,0.3446,0.8716,0.7903,experiments\transunet_ISIC_2018_2026-04-28_15-19-03\model.pth
+maffnet,ISIC_2018,N/A,0.3444,0.8796,0.8007,experiments\maffnet_ISIC_2018_2026-04-28_15-19-03\model.pth

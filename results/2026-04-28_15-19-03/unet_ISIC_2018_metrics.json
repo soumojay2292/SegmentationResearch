@@ -1,0 +1,7 @@
+{
+  "model": "unet",
+  "dataset": "ISIC_2018",
+  "val_loss": NaN,
+  "dice": 0.0,
+  "iou": 0.0
+}

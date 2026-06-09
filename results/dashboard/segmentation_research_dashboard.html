@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<title>Segmentation Research Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body  { font-family: Arial, sans-serif; margin: 24px; background: #f4f6f8; color: #222; }
+  h1    { margin-bottom: 4px; }
+  .meta { color: #666; font-size: .88em; margin-bottom: 28px; }
+  table { border-collapse: collapse; width: 100%; background: #fff;
+           box-shadow: 0 1px 6px rgba(0,0,0,.12); border-radius: 6px;
+           overflow: hidden; margin-bottom: 36px; }
+  th    { background: #2c3e50; color: #fff; padding: 10px 14px; text-align: left; }
+  td    { padding: 8px 14px; border-bottom: 1px solid #e8e8e8; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { filter: brightness(.96); }
+  .chart-box { background: #fff; border-radius: 8px;
+                box-shadow: 0 1px 6px rgba(0,0,0,.12);
+                padding: 24px; max-width: 960px; }
+</style>
+</head>
+<body>
+<h1>Segmentation Research Dashboard</h1>
+<p class="meta">Generated: 2026-04-30 10:38:26 &nbsp;|&nbsp; Source: results\2026-04-28_15-19-03\summary.csv</p>
+
+<table>
+<thead>
+  <tr>
+    <th>Model</th><th>Dataset</th>
+    <th>Train Loss</th><th>Val Loss</th>
+    <th>Dice ↑</th><th>IoU ↑</th>
+    <th>Checkpoint</th>
+  </tr>
+</thead><tbody>
+<tr style='background:hsl(0, 55%, 93%)'><td>unet</td><td>ISIC_2016</td><td>N/A</td><td>nan</td><td><b>0.0000</b></td><td>0.0000</td><td style='font-size:.75em'>experiments\unet_ISIC_2016_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(103, 55%, 93%)'><td>attention_unet</td><td>ISIC_2016</td><td>N/A</td><td>0.4693</td><td><b>0.8663</b></td><td>0.7782</td><td style='font-size:.75em'>experiments\attention_unet_ISIC_2016_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(96, 55%, 93%)'><td>unetpp</td><td>ISIC_2016</td><td>N/A</td><td>0.6884</td><td><b>0.8059</b></td><td>0.7017</td><td style='font-size:.75em'>experiments\unetpp_ISIC_2016_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(92, 55%, 93%)'><td>transunet</td><td>ISIC_2016</td><td>N/A</td><td>0.8337</td><td><b>0.7714</b></td><td>0.6534</td><td style='font-size:.75em'>experiments\transunet_ISIC_2016_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(110, 55%, 93%)'><td>maffnet</td><td>ISIC_2016</td><td>N/A</td><td>0.2441</td><td><b>0.9216</b></td><td>0.8582</td><td style='font-size:.75em'>experiments\maffnet_ISIC_2016_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(0, 55%, 93%)'><td>unet</td><td>ISIC_2017</td><td>N/A</td><td>nan</td><td><b>0.0000</b></td><td>0.0000</td><td style='font-size:.75em'>experiments\unet_ISIC_2017_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(79, 55%, 93%)'><td>attention_unet</td><td>ISIC_2017</td><td>N/A</td><td>0.9249</td><td><b>0.6630</b></td><td>0.5474</td><td style='font-size:.75em'>experiments\attention_unet_ISIC_2017_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(78, 55%, 93%)'><td>unetpp</td><td>ISIC_2017</td><td>N/A</td><td>0.9022</td><td><b>0.6573</b></td><td>0.5385</td><td style='font-size:.75em'>experiments\unetpp_ISIC_2017_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(32, 55%, 93%)'><td>transunet</td><td>ISIC_2017</td><td>N/A</td><td>2.2276</td><td><b>0.2675</b></td><td>0.1752</td><td style='font-size:.75em'>experiments\transunet_ISIC_2017_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(93, 55%, 93%)'><td>maffnet</td><td>ISIC_2017</td><td>N/A</td><td>0.6590</td><td><b>0.7824</b></td><td>0.6811</td><td style='font-size:.75em'>experiments\maffnet_ISIC_2017_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(0, 55%, 93%)'><td>unet</td><td>ISIC_2018</td><td>N/A</td><td>nan</td><td><b>0.0000</b></td><td>0.0000</td><td style='font-size:.75em'>experiments\unet_ISIC_2018_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(91, 55%, 93%)'><td>attention_unet</td><td>ISIC_2018</td><td>N/A</td><td>0.6120</td><td><b>0.7638</b></td><td>0.6607</td><td style='font-size:.75em'>experiments\attention_unet_ISIC_2018_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(82, 55%, 93%)'><td>unetpp</td><td>ISIC_2018</td><td>N/A</td><td>0.8693</td><td><b>0.6838</b></td><td>0.5713</td><td style='font-size:.75em'>experiments\unetpp_ISIC_2018_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(104, 55%, 93%)'><td>transunet</td><td>ISIC_2018</td><td>N/A</td><td>0.3446</td><td><b>0.8716</b></td><td>0.7903</td><td style='font-size:.75em'>experiments\transunet_ISIC_2018_2026-04-28_15-19-03\model.pth</td></tr>
+<tr style='background:hsl(105, 55%, 93%)'><td>maffnet</td><td>ISIC_2018</td><td>N/A</td><td>0.3444</td><td><b>0.8796</b></td><td>0.8007</td><td style='font-size:.75em'>experiments\maffnet_ISIC_2018_2026-04-28_15-19-03\model.pth</td></tr>
+</tbody>
+</table>
+
+<div class="chart-box">
+  <canvas id="metricsChart"></canvas>
+</div>
+
+<script>
+new Chart(document.getElementById("metricsChart"), {
+  type: "bar",
+  data: {
+    labels: ["unet / ISIC_2016", "attention_unet / ISIC_2016", "unetpp / ISIC_2016", "transunet / ISIC_2016", "maffnet / ISIC_2016", "unet / ISIC_2017", "attention_unet / ISIC_2017", "unetpp / ISIC_2017", "transunet / ISIC_2017", "maffnet / ISIC_2017", "unet / ISIC_2018", "attention_unet / ISIC_2018", "unetpp / ISIC_2018", "transunet / ISIC_2018", "maffnet / ISIC_2018"],
+    datasets: [
+      {
+        label: "Val Dice",
+        data: [0.0, 0.8663, 0.8059, 0.7714, 0.9216, 0.0, 0.663, 0.6573, 0.2675, 0.7824, 0.0, 0.7638, 0.6838, 0.8716, 0.8796],
+        backgroundColor: "rgba(52,152,219,.75)",
+        borderColor:     "rgba(52,152,219,1)",
+        borderWidth: 1
+      },
+      {
+        label: "Val IoU",
+        data: [0.0, 0.7782, 0.7017, 0.6534, 0.8582, 0.0, 0.5474, 0.5385, 0.1752, 0.6811, 0.0, 0.6607, 0.5713, 0.7903, 0.8007],
+        backgroundColor: "rgba(46,204,113,.75)",
+        borderColor:     "rgba(46,204,113,1)",
+        borderWidth: 1
+      }
+    ]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { position: "top" },
+      title:  { display: true, text: "Validation Metrics — All Models & Datasets" }
+    },
+    scales: { y: { beginAtZero: true, max: 1.0,
+                     title: { display: true, text: "Score" } } }
+  }
+});
+</script>
+</body></html>

@@ -1,3 +1,38 @@
 Building UNet++ …
 Training on cuda  |  20 epochs
 Total params: 8.6M
+  Ep 001/20  lr=1.00e-03  train=0.9565  val=1.3462  dice=0.6914  mIoU=0.5720  [122s]
+  ↑ New best dice=0.6914 → best_unetpp.pth
+  Ep 002/20  lr=9.50e-04  train=0.8892  val=0.8881  dice=0.7178  mIoU=0.5996  [122s]
+  ↑ New best dice=0.7178 → best_unetpp.pth
+  Ep 003/20  lr=9.00e-04  train=0.8242  val=0.8957  dice=0.7446  mIoU=0.6200  [122s]
+  ↑ New best dice=0.7446 → best_unetpp.pth
+  Ep 004/20  lr=8.50e-04  train=0.8080  val=0.9625  dice=0.7027  mIoU=0.5834  [121s]
+  Ep 005/20  lr=8.00e-04  train=0.7485  val=0.8601  dice=0.7549  mIoU=0.6409  [121s]
+  ↑ New best dice=0.7549 → best_unetpp.pth
+  Ep 006/20  lr=7.50e-04  train=0.7219  val=0.7319  dice=0.7807  mIoU=0.6658  [122s]
+  ↑ New best dice=0.7807 → best_unetpp.pth
+  Ep 007/20  lr=7.00e-04  train=0.7185  val=0.7760  dice=0.7776  mIoU=0.6626  [122s]
+  Ep 008/20  lr=6.50e-04  train=0.6748  val=0.7908  dice=0.7764  mIoU=0.6640  [122s]
+  Ep 009/20  lr=6.00e-04  train=0.6595  val=0.8070  dice=0.7816  mIoU=0.6670  [122s]
+  ↑ New best dice=0.7816 → best_unetpp.pth
+  Ep 010/20  lr=5.50e-04  train=0.6440  val=0.7064  dice=0.8063  mIoU=0.6999  [122s]
+  ↑ New best dice=0.8063 → best_unetpp.pth
+  Ep 011/20  lr=5.00e-04  train=0.6481  val=0.7118  dice=0.7988  mIoU=0.6933  [122s]
+  Ep 012/20  lr=4.50e-04  train=0.5982  val=0.8005  dice=0.7816  mIoU=0.6711  [121s]
+  Ep 013/20  lr=4.00e-04  train=0.5864  val=0.8178  dice=0.7916  mIoU=0.6821  [121s]
+  Ep 014/20  lr=3.50e-04  train=0.5682  val=0.6706  dice=0.8041  mIoU=0.6979  [122s]
+  Ep 015/20  lr=3.00e-04  train=0.5337  val=0.8309  dice=0.7680  mIoU=0.6574  [121s]
+  Ep 016/20  lr=2.50e-04  train=0.5379  val=0.7939  dice=0.7806  mIoU=0.6712  [121s]
+  Ep 017/20  lr=2.00e-04  train=0.5188  val=0.6559  dice=0.8147  mIoU=0.7111  [122s]
+  ↑ New best dice=0.8147 → best_unetpp.pth
+  Ep 018/20  lr=1.50e-04  train=0.5125  val=0.6639  dice=0.8068  mIoU=0.7022  [122s]
+  Ep 019/20  lr=1.00e-04  train=0.5264  val=0.6722  dice=0.8105  mIoU=0.7087  [122s]
+  Ep 020/20  lr=5.00e-05  train=0.4982  val=0.6884  dice=0.8059  mIoU=0.7017  [122s]
+
+Training complete. Best val dice: 0.8147
+[trainer] Saved 5 prediction samples → experiments\unetpp_ISIC_2016_2026-04-28_15-19-03\samples
+[report] Saved → results\dashboard\report.html
+[exp] Experiment saved → experiments\unetpp_ISIC_2016_2026-04-28_15-19-03
+✅ Experiment saved: experiments\unetpp_ISIC_2016_2026-04-28_15-19-03
+

@@ -1,0 +1,15 @@
+metric,value
+val_loss,nan
+acc,0.8263
+dice,0.0000
+mIoU,0.0000
+sensitivity,0.0000
+specificity,1.0000
+f1,0.0000
+best_dice,0.0000
+model,unet
+dataset,ISIC_2017
+epochs,20
+batch_size,2
+lr,0.001
+img_size,384

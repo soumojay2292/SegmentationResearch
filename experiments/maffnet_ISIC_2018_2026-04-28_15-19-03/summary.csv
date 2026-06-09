@@ -1,0 +1,15 @@
+metric,value
+val_loss,0.3448
+acc,0.9565
+dice,0.8796
+mIoU,0.8007
+sensitivity,0.8811
+specificity,0.9763
+f1,0.8796
+best_dice,0.8796
+model,maffnet
+dataset,ISIC_2018
+epochs,20
+batch_size,2
+lr,0.001
+img_size,384
