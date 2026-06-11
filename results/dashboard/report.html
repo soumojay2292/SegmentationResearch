@@ -13,7 +13,7 @@
   <div class="hdr">
     <div class="hdr-left">
       <h1>MAFFNet — Segmentation Research Dashboard</h1>
-      <p>Dataset: ISIC_2018 &nbsp;·&nbsp; SAM2 Hiera-Large backbone &nbsp;·&nbsp; 20 epochs · Apr 30 2026</p>
+      <p>Dataset: ISIC_2018 &nbsp;·&nbsp; SAM2 Hiera-Large backbone &nbsp;·&nbsp; 20 epochs · Jun 09 2026</p>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <span class="badge">Epoch 20 / 20</span>
@@ -22,26 +22,26 @@
   </div>
 
   <!-- ── KPI cards ── -->
-  <div class="sec-label">Key Metrics — Validation Set (Best: Epoch 20)</div>
+  <div class="sec-label">Key Metrics — Validation Set (Best: Epoch 13)</div>
   <div class="kpi-grid">
     <div class="kpi">
       <div class="kpi-label">Dice Score</div>
-      <div class="kpi-val">0.8796</div>
-      <div class="kpi-delta dn">↓ -0.0044 vs baseline</div>
+      <div class="kpi-val">0.6797</div>
+      <div class="kpi-delta dn">↓ -0.2043 vs baseline</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Mean IoU</div>
-      <div class="kpi-val">0.8007</div>
-      <div class="kpi-delta dn">↓ -0.0062 vs baseline</div>
+      <div class="kpi-val">0.5598</div>
+      <div class="kpi-delta dn">↓ -0.2471 vs baseline</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Pixel Accuracy</div>
-      <div class="kpi-val">95.65%</div>
+      <div class="kpi-val">88.70%</div>
       <div class="kpi-delta up">&#8593; Best validation epoch</div>
     </div>
     <div class="kpi">
       <div class="kpi-label">Val Loss</div>
-      <div class="kpi-val">0.3292</div>
+      <div class="kpi-val">0.8327</div>
       <div class="kpi-delta up">&#8595; Lowest across 20 epochs</div>
     </div>
   </div>
@@ -49,55 +49,55 @@
   <!-- ── Comparison + Loss curve ── -->
   <div class="two-col">
     <div class="card">
-      <div class="sec-label" style="margin-bottom:12px">Comparison: final_baseline vs Current (ep 20)</div>
+      <div class="sec-label" style="margin-bottom:12px">Comparison: final_baseline vs Current (ep 13)</div>
       <div class="legend">
         <span><span class="leg-dot" style="background:#3b4275"></span>final_baseline</span>
-        <span><span class="leg-dot" style="background:#6366f1"></span>Current (ep 20)</span>
+        <span><span class="leg-dot" style="background:#6366f1"></span>Current (ep 13)</span>
       </div>
       
       <div class="cmp-row">
         <span class="cmp-metric">Dice</span>
         <div class="cmp-bar-wrap">
           <div class="cmp-bar bar-base" style="width:88.40%"></div>
-          <div class="cmp-bar bar-imp"  style="width:87.96%"></div>
+          <div class="cmp-bar bar-imp"  style="width:67.97%"></div>
         </div>
-        <div class="cmp-vals"><span class="v-base">0.8840</span><span class="v-imp">0.8796</span></div>
+        <div class="cmp-vals"><span class="v-base">0.8840</span><span class="v-imp">0.6797</span></div>
       </div>
       
       <div class="cmp-row">
         <span class="cmp-metric">IoU</span>
         <div class="cmp-bar-wrap">
           <div class="cmp-bar bar-base" style="width:80.69%"></div>
-          <div class="cmp-bar bar-imp"  style="width:80.07%"></div>
+          <div class="cmp-bar bar-imp"  style="width:55.98%"></div>
         </div>
-        <div class="cmp-vals"><span class="v-base">0.8069</span><span class="v-imp">0.8007</span></div>
+        <div class="cmp-vals"><span class="v-base">0.8069</span><span class="v-imp">0.5598</span></div>
       </div>
       
       <div class="cmp-row">
         <span class="cmp-metric">Accuracy</span>
         <div class="cmp-bar-wrap">
           <div class="cmp-bar bar-base" style="width:95.85%"></div>
-          <div class="cmp-bar bar-imp"  style="width:95.65%"></div>
+          <div class="cmp-bar bar-imp"  style="width:88.70%"></div>
         </div>
-        <div class="cmp-vals"><span class="v-base">0.9585</span><span class="v-imp">0.9565</span></div>
+        <div class="cmp-vals"><span class="v-base">0.9585</span><span class="v-imp">0.8870</span></div>
       </div>
       
       <div class="cmp-row">
         <span class="cmp-metric">Sensitivity</span>
         <div class="cmp-bar-wrap">
           <div class="cmp-bar bar-base" style="width:88.15%"></div>
-          <div class="cmp-bar bar-imp"  style="width:88.11%"></div>
+          <div class="cmp-bar bar-imp"  style="width:71.30%"></div>
         </div>
-        <div class="cmp-vals"><span class="v-base">0.8815</span><span class="v-imp">0.8811</span></div>
+        <div class="cmp-vals"><span class="v-base">0.8815</span><span class="v-imp">0.7130</span></div>
       </div>
       
       <div class="cmp-row">
         <span class="cmp-metric">Specificity</span>
         <div class="cmp-bar-wrap">
           <div class="cmp-bar bar-base" style="width:98.16%"></div>
-          <div class="cmp-bar bar-imp"  style="width:97.63%"></div>
+          <div class="cmp-bar bar-imp"  style="width:93.66%"></div>
         </div>
-        <div class="cmp-vals"><span class="v-base">0.9816</span><span class="v-imp">0.9763</span></div>
+        <div class="cmp-vals"><span class="v-base">0.9816</span><span class="v-imp">0.9366</span></div>
       </div>
     </div>
 
@@ -142,7 +142,7 @@
     </div>
     <div class="vis-card">
       <div class="vis-label">Prediction</div>
-      <div class="vis-img"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYAAAAGACAAAAACBrOpjAAAFJ0lEQVR4nO3d0WHkNhAE0Sbzz3kcgO2TvF6gp2fqBXBaothYyT+WAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANz2yKj6faTrnhZnvrjC0/H0N5V5so5/Xoon9vyHNHiCj39Egif7/BWf4E0/f538ty+48v6cPqNHuW4s4Pg7Wsp1IcCF4ynFemccTinVO+RoSqHeKQdTyvSOOZZSpLMBQg9l3h9iV5QSvYOOpBTonXQgpTwHAyQex6QAjvMvxRn0JZxZ4FiAvKOYFcB1/qUww66gPO+0F7GU5UyAtFMwmncFlaIcCRB2BlbzFqCs/AMDZHkHvoKlICxgXgD/C1jKwQLMZgYoxZgZQJsDBL19HQxdQCnF0AA5pgYobQ0Q8+RNTF2AUl6EsQFSzA1QWhkg5LH7mLsAZbwLgwNoY4BWb10pAAswGx2gtC1AtycutTd6AQmGByitCtDwcUvNDV+A2hd4Fz1rS+MXoOavxfwAqi0Bej9oVwsWoNoRoPFjlvrasIDWdgQozQ/Q+Blb27EA9X09lgRQTQ/Q9gG727KAttYEKI0O0PXx+luzADV9R/YE0OQATd+uhA/JAswIYLYpQGlqgJZPFmLTAtTxRVkVoCMCmO0KUBoZoOFj5di1APV7V5YF6IcAZtsClJrZFqAdApitC1DqZV2AbvYFKLWyL0AzBDBbGKDUycIAvRDAbGOAmhbg+cK/sdbGBajTBFYG6IQAZjsDlNrYGaCRpQFKXSwN0MfWAKVJAfhL7HNbF6AuE1gbQE0K7A3QxOIApQ4WB+hhc4DSmAD8HvqxzQtoYXWAcn+A7QE6IIDZ7gA1JgC/Bn1q9wIaIIAZAYYE4EvgQyzAbHmAmhOAO+gzyxcwKQAT+AgLMCPAnADcQe4FJBYo9wfgCpoUIHECbusXUKMCMIH/bP0ChgUInEB5fzwLUI0KEDgBLxYg7wS+HiBxAmX82SzAXIAA5gLfD5B4B8lXgAWYCxDAXOBAgMw7SKYCLMBcgADmAicCpN5BFizAPAECmAscCRB8B9XtH8gCzAhgnsCZAMF3kC4XYAHmAgQwOxQg+Q7S1QmwAHMBApidChB9B+niBFiAGQHMEyCA2bEA2V8C97AA8x1EALNzAbiDfoUFmO8gApgdDMAd9BssYHAAJvALLMD8LXw0ABP4GQsYHYAJ/IgFzA7ABMwBKPATrqDpAbiE/owFjA/ABNwLoMCfcAUtCMAE3AugwL/jCloRgAm4F0AB9xWUV+C582P4DjC7FiBvAtMWQIF/xBW0J0DWBJ5LP4cFmN0MkDWBiQugwN9xBZnflbsBmIB7ASkFnrFXUEqBud8BFPCfh/v/ndbqVBy/BTEC96+hDwncfwf0LvAs+EOMEdj/EiZBg7ugpO1n4v1vQU/v74IN/zHu2Z7gXX4J2rV4/NLeI2kRQK0a7AygPg3WBmhS4fKJdAsge4Nn229By38z7fqwteVAugawRSCAt8P1F7LzAhwNrp9Hwy/hXd/LOU9WM48jYwFZr8rcx6qBp5GzAIW9LRMD6JkXOCuAnnEDCwugZ9oFlxZA0/4kSHycmnQQiQF0IIHtHOKuoDPH5XsPMxegL4/AeAqxAfTFBM5DCA6gbyWwnkF0AH2jgfkE0gP87wjuA3D/fHcF+/PbP8CRDs8v2zR4+gYf4YZq++wtPoQlQZMnb/IxrkdY9dwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAEvwFC1ucrQNcCowAAAAASUVORK5CYII=" alt="MAFFNet prediction"></div>
+      <div class="vis-img"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAYAAAAGACAAAAACBrOpjAAAFOklEQVR4nO3dzbLjRBBE4ZSD93/lYsOCYa5/AKuzsup8O8IRVquPSpJnCJAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAtcilO5S//BdXznrm9svsZEOHcG9f6Q9fLzf27+u2/LcGr99fqY9cs/XR9s/KtvS3Jm+fXmoPX88zfb/+PXJTmy+Hp32Hr28QfbH17gxNrr3XHryeefbX92gQNLf//wrP99jNwCD9eBq776bUp1f4Cne0OBIwFq4mU74Rb0baVMD+e+1LEjrQ1Qn3xcR47VlPkWVJW6cd9y7wv04b29lOfWCTh9bZfy3BkgcT8mBTDsfynOfQECN2NUAPZ/2S/h1Ox3BcjbCZNhE5DnMWwASmGYADMCmI0LUMoyLkAaAowM4LwPlKIwAWYEMBsYoJRkYIAsj4HXYCkIE2A2MkApx8gASWYGKMWYGUC1OkDO2TcwdAIUcxFMDaCUAmMDaG+AJtdeKQITMC5AmyuvlIAJmBag0XVXCjB6Akr7AiSc8+QAzfa/1N7oW5ACCjyWne/sAA33v9Tc8FuQ2hcYH0CLAvS82EqtMQFzAnS91EqdbZiA0ooAjU+z1NeGCVDnAo8F56jOq9sxAY1tCVBqaksATQ/Q9grrvkAmwIwAZnsClFraE0CjAzS9vAIsmoBSR4sC9EQAs00BSg1tCtASAcwIYLYqQKmfVQE6IoAZAcx2BSi1syuAxgZI/D949cAEmC0LUOpmWYB+CGBGADMCDAnAe+h/xASYEcCMAFMChDwESs0wAWYEMFsXoDQ1QMhDoJt1E6BmI7AvgHoVWBigFwLMCRDzFC41snICSn2sDKCaGSDmHtTJzglQnxFYGkAzAwTdg0pNMAFmawOUelgbQCMDBD0E1GQEmIBZAZJGoAcmYFgARuBfWjwBpZEBGAH3BFDAfQuigPsZQAH3Q5gC7rcgCrhfQyng/h1AgQ8t/iGmGh2AEfjM5glQhxFYHaCD3QFqcgAeAh/ZPQHyj8DyALIX2B7Abn2AIsBu6ydA5hEggLwFCCBvgRsD5PwSK+OxmQBzAQKYCxDAjADmESCAGQHMI0AAcwECmAsQwFyAAOYCBDAXIIC5AAHM7gyQ88ehxhFgAswFCGBGAPMIEMBc4NYAiU/h05gAMwKY70H3BuAe9BYTYB6BmwMwAu8wAcMDMAJvMAHTA0SOQJ07FBNgdn+AyBE4hwmYH4ARcE8ABV7gFrQhACPgngAKuG9BFHA/AyjgfghTwP0WlFTgOncoXkPNDgZIGoGZE0CBH3ALMl8pRwMwAr9jAlYFYATcExBR4Dp5MG5BZqcDBIzApdETEFBAs29B3QtcZw9neAb0LnAdPp7jIdy7wGGWt6CLBO7XUAo02An3f7e8x4aYL8VSM8f3w/xL+Fp/L2qwAfVkVbViPxoE0K9b/bcVGRLsDKC/9vr3xRxPsDbAUzV8O9r/cfSl2SLOrwZvR0QAHWtAAG8Cw+WYMgFnGhDAm8BxNbZ/Cwoe2IkBNK5AWgBdw+LGBdCwGcgLoFkFAgPomhQ2MYAmzUBkAA36i7TMALphCExNUwN8nWumcme5ZmzDH7Yj93E5D557C7rafdGyAENuwsEBLk0QHEDXhIzJAXTl779/Ad7XUf/p+1dwa4LrdaAGZ99gCV9QL0+uOp97i0Xc+K9YP/20y6n3WMWX1NOzqrYn3mUdt6ump91nJecirDpnAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQC/9CdfHpKKx3HNFAAAAAElFTkSuQmCC" alt="MAFFNet prediction"></div>
     </div>
   </div>
 
@@ -165,10 +165,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const eps       = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-const trainLoss = [0.6168, 0.4486, 0.4106, 0.3823, 0.3685, 0.3618, 0.3488, 0.339, 0.3244, 0.3176, 0.2938, 0.2985, 0.2953, 0.3003, 0.3056, 0.3047, 0.3037, 0.2998, 0.2943, 0.2974];
-const valLoss   = [0.4666, 0.4881, 0.4744, 0.3754, 0.4431, 0.363, 0.3592, 0.3623, 0.3292, 0.354, 0.35, 0.3586, 0.3545, 0.3528, 0.3484, 0.3518, 0.3436, 0.3464, 0.3543, 0.3448];
-const valDice   = [0.8398, 0.8443, 0.8439, 0.8664, 0.8549, 0.8686, 0.8785, 0.875, 0.8757, 0.8776, 0.8748, 0.8756, 0.8771, 0.8773, 0.8728, 0.877, 0.8768, 0.8784, 0.8777, 0.8796];
-const valIoU    = [0.7457, 0.7541, 0.755, 0.7831, 0.7706, 0.786, 0.7986, 0.7964, 0.7945, 0.7983, 0.7939, 0.7959, 0.7979, 0.7981, 0.7907, 0.7972, 0.7967, 0.7989, 0.7986, 0.8007];
+const trainLoss = [1.0399, 0.964, 0.8912, 0.8313, 0.8123, 0.7807, 0.7617, 0.7235, 0.712, 0.6698, 0.6587, 0.629, 0.6236, 0.6199, 0.5956, 0.5963, 0.5964, 0.5757, 0.5542, 0.5607];
+const valLoss   = [1.1798, 1.1312, 1.03, 0.9882, 1.0681, 1.0408, 1.209, 0.9954, 0.9166, 0.9449, 1.0178, 1.1184, 0.8327, 0.9478, 0.956, 1.0248, 1.0946, 0.8982, 0.9092, 0.9809];
+const valDice   = [0.6052, 0.5853, 0.6044, 0.6309, 0.6238, 0.6222, 0.5678, 0.6514, 0.6694, 0.655, 0.6442, 0.6305, 0.6797, 0.6561, 0.6612, 0.6602, 0.6473, 0.6752, 0.6656, 0.6668];
+const valIoU    = [0.4782, 0.4631, 0.4758, 0.5087, 0.4995, 0.4986, 0.4389, 0.5277, 0.5441, 0.5339, 0.5247, 0.5051, 0.5598, 0.5342, 0.5409, 0.539, 0.5239, 0.5543, 0.5403, 0.5469];
 
 const baseOpts = {
   responsive: true,
@@ -207,7 +207,7 @@ new Chart(document.getElementById('diceChart'), {
       { data: valDice, borderColor: '#34d399', borderWidth: 1.5, tension: 0.4, fill: false }
     ]
   },
-  options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0.79 } } }
+  options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0.52 } } }
 });
 
 new Chart(document.getElementById('iouChart'), {
@@ -218,7 +218,7 @@ new Chart(document.getElementById('iouChart'), {
       { data: valIoU, borderColor: '#f59e0b', borderWidth: 1.5, tension: 0.4, fill: false }
     ]
   },
-  options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0.7 } } }
+  options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0.39 } } }
 });
 </script>
 </body>
