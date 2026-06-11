@@ -351,7 +351,7 @@ def run_all():
                         )
                     elif model_name == "unet":
                         print("Building U-Net …")
-                        model   = _LogitWrapper(UNet())
+                        model   = UNet()
                         trainer = SimpleTrainer(
                             model=model,
                             train_loader=train_loader,

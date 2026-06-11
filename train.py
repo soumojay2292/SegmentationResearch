@@ -226,7 +226,7 @@ def main():
         )
     elif args.model == "unet":
         print("Building U-Net …")
-        model   = _LogitWrapper(UNet())
+        model   = UNet()
         trainer = SimpleTrainer(
             model=model,
             train_loader=train_loader,

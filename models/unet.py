@@ -28,4 +28,4 @@ class UNet(nn.Module):
         d3 = self.dec3(torch.cat([self.up(e4), e3],1))
         d2 = self.dec2(torch.cat([self.up(d3), e2],1))
         d1 = self.dec1(torch.cat([self.up(d2), e1],1))
-        return torch.sigmoid(self.final(d1))
+        return self.final(d1)

@@ -133,6 +133,11 @@ class SimpleTrainer:
                 logits = self.model(imgs)
                 loss   = self.criterion(logits, masks)
 
+            if not torch.isfinite(loss):
+                raise RuntimeError(
+                    f"Non-finite loss detected at epoch {epoch}"
+                )
+
             pbar.set_postfix({"loss": f"{loss.item():.4f}"})
             self.scaler.scale(loss).backward()
             self.scaler.unscale_(self.optim)
