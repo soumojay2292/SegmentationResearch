@@ -38,42 +38,56 @@ class ConvBNReLU(nn.Sequential):
 # ---------------------------------------------------------------------------
 class MMPA(nn.Module):
     """
-    Multi-scale dilated convolution (rates 3, 5, 7) + channel attention.
-    No channel reduction – keeps full channel width throughout.
+    Mixed Multi-scale Perception Adaptor (paper-faithful, §3.1).
+
+    Lightweight residual adaptor that preserves the frozen SAM features:
+      1. LayerNorm + project channel C -> 32 (bottleneck), GELU.
+      2. Three depthwise-separable dilated experts (d=3,5,7) on the 32-d code.
+      3. WetGeneration: GAP -> Linear(32->16) -> GELU -> Linear(16->3) -> Softmax
+         => dynamic per-expert weights alpha.
+      4. E_fused = sum_j alpha_j * E_j ; bottleneck residual with scaling
+         Gamma (init 1e-7) so the adaptor starts ~identity.
+      5. Project 32 -> C, GELU ; add to input (adaptor residual).
     """
-    def __init__(self, channels: int):
+    def __init__(self, channels: int, bottleneck: int = 32):
         super().__init__()
-        self.branch3 = ConvBNReLU(channels, channels, k=3, d=3)
-        self.branch5 = ConvBNReLU(channels, channels, k=3, d=5)
-        self.branch7 = ConvBNReLU(channels, channels, k=3, d=7)
-        self.branch1 = ConvBNReLU(channels, channels, k=1, p=0)  # context
+        self.ln    = nn.GroupNorm(1, channels)            # LayerNorm-like over (C,H,W)
+        self.proj  = nn.Conv2d(channels, bottleneck, 1)
 
-        # Fuse 4 branches → same channel width
-        self.fuse = ConvBNReLU(channels * 4, channels, k=1, p=0)
+        def _expert(d):
+            return nn.Sequential(
+                nn.Conv2d(bottleneck, bottleneck, 3, padding=1,
+                          groups=bottleneck, bias=False),         # DWConv 3x3
+                nn.GELU(),
+                nn.Conv2d(bottleneck, bottleneck, 3, padding=d, dilation=d,
+                          groups=bottleneck, bias=False),         # dilated DWConv
+            )
+        self.e1 = _expert(3)
+        self.e2 = _expert(5)
+        self.e3 = _expert(7)
 
-        # Channel attention (SE-style)
-        self.ca_avg = nn.AdaptiveAvgPool2d(1)
-        self.ca_max = nn.AdaptiveMaxPool2d(1)
-        self.ca_fc  = nn.Sequential(
-            nn.Flatten(),
-            nn.Linear(channels, channels // 4),
-            nn.ReLU(inplace=True),
-            nn.Linear(channels // 4, channels),
-            nn.Sigmoid(),
+        # WetGeneration: dynamic softmax weights for the 3 experts
+        self.gap = nn.AdaptiveAvgPool2d(1)
+        self.gen = nn.Sequential(
+            nn.Linear(bottleneck, bottleneck // 2),
+            nn.GELU(),
+            nn.Linear(bottleneck // 2, 3),
         )
+        # Learnable scaling vector Gamma; init 1e-2 for stable gradients under AdamW
+        # (1e-7 caused non-finite gradients — see ROOT_CAUSE_ANALYSIS.md)
+        self.gamma     = nn.Parameter(torch.full((1, bottleneck, 1, 1), 1e-2))
+        self.proj_back = nn.Conv2d(bottleneck, channels, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        b3 = self.branch3(x)
-        b5 = self.branch5(x)
-        b7 = self.branch7(x)
-        b1 = self.branch1(x)
+        z = F.gelu(self.proj(self.ln(x)))                  # (B, 32, H, W)
 
-        out = self.fuse(torch.cat([b3, b5, b7, b1], dim=1))
+        experts = torch.stack([self.e1(z), self.e2(z), self.e3(z)], dim=1)  # (B,3,32,H,W)
+        alpha   = torch.softmax(self.gen(self.gap(z).flatten(1)), dim=1)    # (B,3)
+        e_fused = (experts * alpha[:, :, None, None, None]).sum(dim=1)      # (B,32,H,W)
 
-        # Channel attention
-        ca = self.ca_fc(self.ca_avg(out) + self.ca_max(out))
-        ca = ca.view(out.size(0), -1, 1, 1)
-        return out * ca + x  # residual
+        p_enhanced = z + self.gamma * e_fused              # bottleneck residual
+        adapted    = F.gelu(self.proj_back(p_enhanced))    # (B, C, H, W)
+        return x + adapted                                  # adaptor residual
 
 
 # ---------------------------------------------------------------------------
@@ -81,36 +95,47 @@ class MMPA(nn.Module):
 # ---------------------------------------------------------------------------
 class FGFF(nn.Module):
     """
-    FFT → 2D magnitude spectrum → normalise → conv → scale spatial features.
-    No channel reduction.
+    Frequency-Guided Feature Fusion (paper-faithful cross-modal, §3.2.3, eq.9).
+
+    Spatial branch : Conv1x1 -> 4 parallel dilated convs (d=1,3,5,7) -> Cat -> Conv3x3
+                     => f_spatial_fused (multi-receptive-field).
+    Frequency branch: FFT magnitude spectrum of the feature -> channel avg/max
+                      -> Conv3x3 -> Sigmoid => f_freq_attn (spatial attention map).
+    Fusion         : f_fused = beta ⊙ (f_freq_attn ⊗ f_spatial_fused), beta a
+                     learnable per-channel weight; + residual.
     """
     def __init__(self, channels: int):
         super().__init__()
-        self.freq_conv = nn.Sequential(
-            nn.Conv2d(channels, channels, 1, bias=False),
-            nn.BatchNorm2d(channels),
-            nn.ReLU(inplace=True),
+        self.reduce = nn.Conv2d(channels, channels, 1, bias=False)
+        self.dil = nn.ModuleList([
+            nn.Conv2d(channels, channels, 3, padding=d, dilation=d, bias=False)
+            for d in (1, 3, 5, 7)
+        ])
+        self.spatial_fuse = ConvBNReLU(channels * 4, channels, k=3)
+        # Frequency-domain spatial attention from channel-pooled magnitude
+        self.freq_attn = nn.Sequential(
+            nn.Conv2d(2, 1, 3, padding=1, bias=False),
+            nn.Sigmoid(),
         )
-        self.spatial_conv = ConvBNReLU(channels, channels)
-        self.fuse = ConvBNReLU(channels * 2, channels, k=1, p=0)
+        # Learnable channel weight beta (importance of frequency-modulated features)
+        self.beta = nn.Parameter(torch.ones(1, channels, 1, 1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Frequency branch
-        # --- Force FFT in float32 to avoid cuFFT fp16 limitation ---
-        x_float = x.float()
-        x_fft = torch.fft.rfft2(x_float, norm='ortho')
-        mag     = torch.abs(x_fft)                    # (B, C, H, W//2+1)
-        mag_full = F.interpolate(mag, size=x.shape[2:], mode='bilinear',
-                                 align_corners=False)
-        # Normalise per-channel to [0,1]
-        mag_min  = mag_full.flatten(2).min(dim=2)[0].unsqueeze(-1).unsqueeze(-1)
-        mag_max  = mag_full.flatten(2).max(dim=2)[0].unsqueeze(-1).unsqueeze(-1)
-        mag_norm = (mag_full - mag_min) / (mag_max - mag_min + 1e-8)
+        # --- Spatial multi-receptive-field branch ---
+        s = self.reduce(x)
+        spatial_fused = self.spatial_fuse(torch.cat([conv(s) for conv in self.dil], dim=1))
 
-        freq_feat = self.freq_conv(mag_norm.to(x.dtype))
-        spatial_feat = self.spatial_conv(x)
-        fused        = self.fuse(torch.cat([spatial_feat, freq_feat], dim=1))
-        return fused + x  # residual
+        # --- Frequency branch: magnitude spectrum (float32 for cuFFT) ---
+        mag = torch.abs(torch.fft.rfft2(x.float(), norm='ortho'))
+        mag = F.interpolate(mag, size=x.shape[2:], mode='bilinear',
+                            align_corners=False).to(x.dtype)
+        avg = mag.mean(dim=1, keepdim=True)
+        mx  = mag.max(dim=1, keepdim=True)[0]
+        freq_attn = self.freq_attn(torch.cat([avg, mx], dim=1))    # (B,1,H,W)
+
+        # --- Cross-modal fusion: frequency attention modulates spatial features ---
+        fused = self.beta * (freq_attn * spatial_fused)
+        return fused + x   # residual
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +333,10 @@ class MAFFNet(nn.Module):
         self.dec4 = DecoderBlock(c4,     c3, c3)    # up: c4 → c3
         self.dec3 = DecoderBlock(c3,     c2, c2)    # up: c3 → c2
         self.dec2 = DecoderBlock(c2,     c1, c1)    # up: c2 → c1
-        self.dec1 = DecoderBlock(c1,     c1, c1)    # up: c1 → c1 (no skip at lowest)
+        # Finest level: skip-less refinement (no encoder feature beyond f1 exists).
+        # Restored — replaces the zero-tensor skip workaround.
+        self.dec1_up   = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+        self.dec1_conv = nn.Sequential(ConvBNReLU(c1, c1), ConvBNReLU(c1, c1))
 
         # ---------- Segmentation heads (one per decoder level) ----------
         self.head4 = nn.Conv2d(c3, 1, 1)
@@ -319,6 +347,12 @@ class MAFFNet(nn.Module):
         # ---------- RDB ----------
         self.rdb = RDB([c4, c3, c2, c1])
 
+        # ---------- ImageNet/SAM input normalisation ----------
+        # The SAM2 image_encoder is called directly (bypassing SAM2's internal
+        # forward_image normalisation), so we apply it here. Input assumed [0,1].
+        self.register_buffer("img_mean", torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1))
+        self.register_buffer("img_std",  torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1))
+
         # Input size for upsampling predictions
         self._input_size = (384, 384)
 
@@ -326,8 +360,11 @@ class MAFFNet(nn.Module):
         H, W = x.shape[2], x.shape[3]
         self._input_size = (H, W)
 
+        # --- ImageNet/SAM normalisation (image_encoder called directly) ---
+        x_norm = (x - self.img_mean) / self.img_std
+
         # --- Backbone ---
-        f1, f2, f3, f4 = self.backbone(x)   # shallow → deep
+        f1, f2, f3, f4 = self.backbone(x_norm)   # shallow → deep
 
         # --- MMPA ---
         f1 = self.mmpa1(f1)
@@ -345,10 +382,8 @@ class MAFFNet(nn.Module):
         d4 = self.dec4(f4, f3)     # stride ~16
         d3 = self.dec3(d4, f2)     # stride ~8
         d2 = self.dec2(d3, f1)     # stride ~4
-        # Final upsample: no skip connection at level 1 (use zero skip)
-        up_d2 = F.interpolate(d2, scale_factor=2, mode='bilinear', align_corners=False)
-        zero_skip = torch.zeros_like(up_d2)
-        d1 = self.dec1.conv(torch.cat([up_d2, zero_skip], dim=1))
+        # Finest level: skip-less refinement (restored — no zero-skip workaround)
+        d1 = self.dec1_conv(self.dec1_up(d2))
 
         # --- Segmentation heads → upsample to input size ---
         def _up(t):

@@ -1,0 +1,42 @@
+{
+  "model": "attention_unet",
+  "dataset": "ISIC_2016",
+  "best_epoch": 21,
+  "epochs_run": 40,
+  "early_stopped": true,
+  "best_val_loss": 0.534149,
+  "val": {
+    "acc": 0.926283,
+    "dice": 0.853034,
+    "mIoU": 0.755058,
+    "sensitivity": 0.88909,
+    "specificity": 0.952069,
+    "f1": 0.853034
+  },
+  "test_loss": 0.559229,
+  "test": {
+    "acc": 0.91777,
+    "dice": 0.846567,
+    "mIoU": 0.74429,
+    "sensitivity": 0.878028,
+    "specificity": 0.949467,
+    "f1": 0.846567
+  },
+  "config": {
+    "model": "attention_unet",
+    "dataset": "ISIC_2016",
+    "data_root": "dataset_split",
+    "epochs": 40,
+    "patience": 10,
+    "batch_size": 2,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "img_size": 384,
+    "fast": false,
+    "workers": 2,
+    "checkpoint": null,
+    "resume": null,
+    "save_dir": "experiments/attn_unet_ISIC_2016/checkpoints",
+    "exp": "attn_unet_ISIC_2016"
+  }
+}

@@ -468,6 +468,15 @@ def run_all():
     except Exception as _dash_err:
         print(f"[WARN] Dashboard generation failed: {_dash_err}")
 
+    # --- Benchmark dashboard (aggregates all experiments; timestamped, no overwrite) ---
+    try:
+        from utils.benchmark_report import generate_benchmark
+        bench_path = generate_benchmark()
+        print(f"✅ Benchmark dashboard → {os.path.abspath(str(bench_path))}")
+        webbrowser.open(os.path.abspath(str(bench_path)))
+    except Exception as _bench_err:
+        print(f"[WARN] Benchmark dashboard failed: {_bench_err}")
+
     print("\n📊 Launching TensorBoard...")
     subprocess.Popen(["tensorboard", "--logdir", "runs"])
 

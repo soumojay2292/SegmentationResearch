@@ -1,0 +1,42 @@
+{
+  "model": "transunet",
+  "dataset": "ISIC_2016",
+  "best_epoch": 7,
+  "epochs_run": 40,
+  "early_stopped": true,
+  "best_val_loss": 0.562493,
+  "val": {
+    "acc": 0.92621,
+    "dice": 0.858848,
+    "mIoU": 0.762226,
+    "sensitivity": 0.834602,
+    "specificity": 0.966751,
+    "f1": 0.858848
+  },
+  "test_loss": 0.671769,
+  "test": {
+    "acc": 0.916098,
+    "dice": 0.836539,
+    "mIoU": 0.734931,
+    "sensitivity": 0.807714,
+    "specificity": 0.969999,
+    "f1": 0.836539
+  },
+  "config": {
+    "model": "transunet",
+    "dataset": "ISIC_2016",
+    "data_root": "dataset_split",
+    "epochs": 40,
+    "patience": 10,
+    "batch_size": 2,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "img_size": 384,
+    "fast": false,
+    "workers": 2,
+    "checkpoint": null,
+    "resume": null,
+    "save_dir": "experiments/transunet_ISIC_2016/checkpoints",
+    "exp": "transunet_ISIC_2016"
+  }
+}

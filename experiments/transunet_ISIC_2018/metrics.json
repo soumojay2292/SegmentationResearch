@@ -1,0 +1,42 @@
+{
+  "model": "transunet",
+  "dataset": "ISIC_2018",
+  "best_epoch": 10,
+  "epochs_run": 40,
+  "early_stopped": true,
+  "best_val_loss": 0.555254,
+  "val": {
+    "acc": 0.927591,
+    "dice": 0.828484,
+    "mIoU": 0.728335,
+    "sensitivity": 0.900436,
+    "specificity": 0.932194,
+    "f1": 0.828484
+  },
+  "test_loss": 0.581986,
+  "test": {
+    "acc": 0.925888,
+    "dice": 0.825937,
+    "mIoU": 0.726465,
+    "sensitivity": 0.892938,
+    "specificity": 0.931508,
+    "f1": 0.825937
+  },
+  "config": {
+    "model": "transunet",
+    "dataset": "ISIC_2018",
+    "data_root": "dataset_split",
+    "epochs": 40,
+    "patience": 10,
+    "batch_size": 2,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "img_size": 384,
+    "fast": false,
+    "workers": 2,
+    "checkpoint": null,
+    "resume": null,
+    "save_dir": "experiments/transunet_ISIC_2018/checkpoints",
+    "exp": "transunet_ISIC_2018"
+  }
+}

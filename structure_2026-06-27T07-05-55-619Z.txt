@@ -1,0 +1,763 @@
+📁 SegmentationResearch
+⏱️  Generated in 736 ms
+──────────────────────────────────────────────────
+├── 📁 checkpoints
+│   └── 📄 training_log.csv
+├── 📁 dataset_raw
+│   └── 📁 ISIC_2017
+│       ├── 📁 ISIC-2017_Test_v2_Data
+│       │   └── 📄 ISIC-2017_Test_v2_Data_metadata.csv
+│       ├── 📁 ISIC-2017_Test_v2_Part2_GroundTruth
+│       │   … (600 items, collapsed)
+│       ├── 📁 ISIC-2017_Training_Data
+│       │   └── 📄 ISIC-2017_Training_Data_metadata.csv
+│       ├── 📁 ISIC-2017_Training_Part1_GroundTruth
+│       ├── 📁 ISIC-2017_Validation_Data
+│       │   └── 📄 ISIC-2017_Validation_Data_metadata.csv
+│       ├── 📁 ISIC-2017_Validation_Part1_GroundTruth
+│       ├── 📁 ISIC-2017_Validation_Part2_GroundTruth
+│       │   … (150 items, collapsed)
+│       ├── 📄 ISIC-2017_Test_v2_Part3_GroundTruth.csv
+│       ├── 📄 ISIC-2017_Training_Part3_GroundTruth.csv
+│       └── 📄 ISIC-2017_Validation_Part3_GroundTruth.csv
+├── 📁 dataset_split
+│   ├── 📁 ISIC_2016
+│   │   ├── 📁 test
+│   │   │   ├── 📁 images
+│   │   │   └── 📁 masks
+│   │   ├── 📁 train
+│   │   │   ├── 📁 images
+│   │   │   ├── 📁 masks
+│   │   │   └── 📁 previews
+│   │   ├── 📁 val
+│   │   │   ├── 📁 images
+│   │   │   └── 📁 masks
+│   │   ├── 📄 test.csv
+│   │   ├── 📄 train.csv
+│   │   └── 📄 val.csv
+│   ├── 📁 ISIC_2017
+│   │   ├── 📁 original_csv_backup
+│   │   │   ├── 📄 test.csv.2026-06-11_12-11-22.bak
+│   │   │   ├── 📄 train.csv.2026-06-11_12-11-22.bak
+│   │   │   └── 📄 val.csv.2026-06-11_12-11-22.bak
+│   │   ├── 📁 test
+│   │   │   ├── 📁 images
+│   │   │   └── 📁 masks
+│   │   ├── 📁 train
+│   │   │   ├── 📁 images
+│   │   │   └── 📁 masks
+│   │   ├── 📁 val
+│   │   │   ├── 📁 images
+│   │   │   └── 📁 masks
+│   │   ├── 📄 test.csv
+│   │   ├── 📄 train.csv
+│   │   └── 📄 val.csv
+│   └── 📁 ISIC_2018
+│       ├── 📁 test
+│       │   ├── 📁 images
+│       │   └── 📁 masks
+│       ├── 📁 train
+│       │   ├── 📁 images
+│       │   ├── 📁 masks
+│       │   └── 📁 previews
+│       ├── 📁 val
+│       │   ├── 📁 images
+│       │   └── 📁 masks
+│       ├── 📄 test.csv
+│       ├── 📄 train.csv
+│       └── 📄 val.csv
+├── 📁 datasets
+│   ├── 🐍 __init__.py
+│   ├── 📝 README.md
+│   └── 🐍 seg_dataset.py
+├── 📁 experiments
+│   … (71 items, collapsed)
+├── 📁 Journal_Paper
+│   ├── 📁 00_Front_Matter
+│   │   └── 📝 0_Front_Matter.md
+│   ├── 📁 01_Introduction
+│   │   └── 📝 1_Introduction.md
+│   ├── 📁 02_Related_Work
+│   │   └── 📝 2_Related_Work.md
+│   ├── 📁 03_Methodology
+│   │   ├── 📝 3.1_Overall_Architecture.md
+│   │   ├── 📝 3.2_MMPA.md
+│   │   ├── 📝 3.3_FGFF.md
+│   │   ├── 📝 3.4_Boundary_Aware_Deep_Supervision.md
+│   │   ├── 📝 3.5_Edge_Weighted_Reconstruction.md
+│   │   └── 📝 3.6_Overall_Training_Objective.md
+│   ├── 📁 04_Experimental_Setup
+│   │   └── 📝 4_Experimental_Setup.md
+│   ├── 📁 05_Results
+│   │   └── 📝 5_Results.md
+│   ├── 📁 06_Discussion
+│   │   └── 📝 6_Discussion.md
+│   ├── 📁 07_Conclusion
+│   │   └── 📝 7_Conclusion.md
+│   ├── 📁 Assets
+│   ├── 📁 Equations
+│   ├── 📁 Figures
+│   ├── 📁 References
+│   │   └── 📝 References.md
+│   ├── 📁 Tables
+│   ├── 📝 INTRODUCTION_REVIEW_REPORT.md
+│   ├── 📝 JOURNAL_WORKSPACE_REPORT.md
+│   ├── 📝 PAPER_OUTLINE.md
+│   ├── 📝 README.md
+│   ├── 📝 REVIEW_REPORT.md
+│   └── 📝 SECTION_STATUS.md
+├── 📁 logs
+│   ├── 📃 attention_unet_ISIC_2016.txt
+│   ├── 📃 attention_unet_ISIC_2017.txt
+│   ├── 📃 attention_unet_ISIC_2018.txt
+│   ├── 📃 attn_log.txt
+│   ├── 📃 maffnet_ISIC_2016.txt
+│   ├── 📃 maffnet_ISIC_2017.txt
+│   ├── 📃 maffnet_ISIC_2018.txt
+│   ├── 📃 maffnet_log.txt
+│   ├── 📃 transunet_ISIC_2016.txt
+│   ├── 📃 transunet_ISIC_2017.txt
+│   ├── 📃 transunet_ISIC_2018.txt
+│   ├── 📃 transunet_log.txt
+│   ├── 📃 unet_ISIC_2016.txt
+│   ├── 📃 unet_ISIC_2017.txt
+│   ├── 📃 unet_ISIC_2018.txt
+│   ├── 📃 unet_log.txt
+│   ├── 📃 unetpp_ISIC_2016.txt
+│   ├── 📃 unetpp_ISIC_2017.txt
+│   ├── 📃 unetpp_ISIC_2018.txt
+│   └── 📃 unetpp_log.txt
+├── 📁 models
+│   ├── 🐍 __init__.py
+│   ├── 🐍 attention_unet.py
+│   ├── 🐍 maffnet.py
+│   ├── 🐍 sam2_loader.py
+│   ├── 🐍 stabilized_maffnet.py
+│   ├── 🐍 test_baselines.py
+│   ├── 🐍 test_transunet.py
+│   ├── 🐍 transunet_legacy.py
+│   ├── 🐍 transunet.py
+│   ├── 🐍 unet_plus_plus.py
+│   └── 🐍 unet.py
+├── 📁 modules
+│   ├── 🐍 feature_alignment.py
+│   ├── 🐍 frequency_branch.py
+│   └── 🐍 gated_fusion.py
+├── 📁 paper
+│   ├── 📁 assets
+│   ├── 📁 figures
+│   │   └── 📝 figure_captions.md
+│   ├── 📁 references
+│   ├── 📁 sections
+│   │   └── 📝 section_III_proposed_methodology.md
+│   └── 📁 tables
+│       ├── 📝 ablation_tables.md
+│       ├── 📄 ablation_tables.tex
+│       ├── 📝 performance_tables.md
+│       └── 📄 performance_tables.tex
+├── 📁 reports
+│   ├── 📁 analysis
+│   │   ├── 📝 ATTN_UNET_2018_CRASH_ANALYSIS.md
+│   │   ├── 📝 COMPUTATIONAL_ANALYSIS.md
+│   │   ├── 📝 EXPERIMENTAL_GAP_ANALYSIS.md
+│   │   ├── 📝 FGFF_NUMERICAL_ANALYSIS_REPORT.md
+│   │   ├── 📝 ISIC2018_ORPHAN_ANALYSIS.md
+│   │   ├── 📝 NONFINITE_TRACE_REPORT.md
+│   │   ├── 📝 PIPELINE_SPEED_INSPECTION.md
+│   │   ├── 📝 RESEARCH_ALIGNMENT_REPORT.md
+│   │   ├── 📝 ROOT_CAUSE_ANALYSIS.md
+│   │   ├── 📝 SMOKE_INIT_ANALYSIS.md
+│   │   └── 📝 UNET_FAILURE_ANALYSIS.md
+│   ├── 📁 architecture
+│   │   ├── 📝 CONTRIBUTION_DESIGN.md
+│   │   ├── 📝 FINAL_MAFFNET_ARCHITECTURE.md
+│   │   └── 📝 MAFFNET_DESIGN.md
+│   ├── 📁 audits
+│   │   ├── 📝 ARCHITECTURE_AUDIT.md
+│   │   ├── 📝 DATASET_AUDIT.md
+│   │   ├── 📝 NOVELTY_AUDIT.md
+│   │   ├── 📝 PREPROCESSING_AUDIT.md
+│   │   ├── 📝 PRETRAIN_VERIFICATION.md
+│   │   ├── 📝 REPRODUCIBILITY_CHECKLIST.md
+│   │   ├── 📝 SPLIT_AUDIT.md
+│   │   └── 📝 TRANSUNET_AUDIT.md
+│   ├── 📁 experiments
+│   │   ├── 📝 ABLATION_PLAN.md
+│   │   ├── 📝 GAMMA_ABLATION_REPORT.md
+│   │   └── 📝 MMPA_COMPONENT_ABLATION_REPORT.md
+│   └── 📁 implementation
+│       ├── 📝 BOUNDARYLOSS_FIX_REPORT.md
+│       ├── 📝 CONTRIBUTION_IMPLEMENTATION_REPORT.md
+│       ├── 📝 FEATURE_ALIGNMENT_IMPLEMENTATION.md
+│       ├── 📝 FREQUENCY_BRANCH_IMPLEMENTATION.md
+│       ├── 📝 GATED_FUSION_IMPLEMENTATION.md
+│       ├── 📝 INTEGRATION_REPORT.md
+│       ├── 📝 MIGRATION_REPORT.md
+│       ├── 📝 OFFICIAL_TRANSUNET_MIGRATION_PLAN.md
+│       ├── 📝 REPORT_MODIFICATION_PLAN.md
+│       ├── 📝 RESTORATION_REPORT.md
+│       ├── 📝 STABILIZED_MAFFNET_ASSEMBLY_REPORT.md
+│       ├── 📝 SYNOPSIS_IMPLEMENTATION_PLAN.md
+│       └── 📝 UNET_FIX_SUMMARY.md
+├── 📁 results
+│   ├── 📁 2026-03-18_10-24-03
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_10-31-42
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_10-33-38
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_10-50-34
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_10-52-31
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_10-54-04
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_11-00-29
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_11-23-02
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_11-43-05
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_11-49-37
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_12-00-48
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_12-17-47
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_12-23-35
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-18_12-28-43
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-20_03-28-38
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-20_04-05-56
+│   │   ├── 📄 report.pdf
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-30_06-20-02
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-30_07-19-01
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-30_07-48-00
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-03-30_11-01-02
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-04-22_10-41-03
+│   │   ├── 📁 samples
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-04-22_12-48-37
+│   │   ├── 📁 samples
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-04-28_15-08-24
+│   │   └── 📄 summary.csv
+│   ├── 📁 2026-04-28_15-19-03
+│   │   ├── 🗒️ attention_unet_ISIC_2016_metrics.json
+│   │   ├── 🗒️ attention_unet_ISIC_2017_metrics.json
+│   │   ├── 🗒️ attention_unet_ISIC_2018_metrics.json
+│   │   ├── 🗒️ maffnet_ISIC_2016_metrics.json
+│   │   ├── 🗒️ maffnet_ISIC_2017_metrics.json
+│   │   ├── 🗒️ maffnet_ISIC_2018_metrics.json
+│   │   ├── 📄 summary.csv
+│   │   ├── 🗒️ transunet_ISIC_2016_metrics.json
+│   │   ├── 🗒️ transunet_ISIC_2017_metrics.json
+│   │   ├── 🗒️ transunet_ISIC_2018_metrics.json
+│   │   ├── 🗒️ unet_ISIC_2016_metrics.json
+│   │   ├── 🗒️ unet_ISIC_2017_metrics.json
+│   │   ├── 🗒️ unet_ISIC_2018_metrics.json
+│   │   ├── 🗒️ unetpp_ISIC_2016_metrics.json
+│   │   ├── 🗒️ unetpp_ISIC_2017_metrics.json
+│   │   └── 🗒️ unetpp_ISIC_2018_metrics.json
+│   ├── 📁 benchmark
+│   │   ├── 🌐 benchmark_2026-06-15_11-05-33.html
+│   │   ├── 🌐 benchmark_2026-06-21_14-36-36.html
+│   │   ├── 🌐 benchmark_latest.html
+│   │   ├── 📝 benchmark_summary.md
+│   │   ├── 📄 master_results.csv
+│   │   └── 📄 master_results.xlsx
+│   ├── 📁 dashboard
+│   │   ├── 🌐 old_report.html
+│   │   ├── 🌐 report.html
+│   │   ├── 🌐 segmentation_research_dashboard.html
+│   │   └── 🎨 style.css
+│   └── 📝 latest_experiment_report.md
+├── 📁 runs
+│   ├── 📁 maffnet_ISIC_2018
+│   │   ├── 📄 events.out.tfevents.1775819855.INST-DEPT-F12RT24.26932.0
+│   │   ├── 📄 events.out.tfevents.1775819981.INST-DEPT-F12RT24.14732.0
+│   │   ├── 📄 events.out.tfevents.1775820791.INST-DEPT-F12RT24.23808.0
+│   │   ├── 📄 events.out.tfevents.1775822364.INST-DEPT-F12RT24.16412.0
+│   │   ├── 📄 events.out.tfevents.1776078843.INST-DEPT-F12RT24.9824.0
+│   │   ├── 📄 events.out.tfevents.1776081301.INST-DEPT-F12RT24.15132.0
+│   │   ├── 📄 events.out.tfevents.1776083779.INST-DEPT-F12RT24.23872.0
+│   │   ├── 📄 events.out.tfevents.1776325695.INST-DEPT-F12RT24.21884.0
+│   │   └── 📄 events.out.tfevents.1776329450.INST-DEPT-F12RT24.27948.0
+│   └── 📁 segmentation_experiment
+│       ├── 📄 events.out.tfevents.1775819861.INST-DEPT-F12RT24.26932.1
+│       ├── 📄 events.out.tfevents.1775819985.INST-DEPT-F12RT24.14732.1
+│       ├── 📄 events.out.tfevents.1775820795.INST-DEPT-F12RT24.23808.1
+│       └── 📄 events.out.tfevents.1775822368.INST-DEPT-F12RT24.16412.1
+├── 📁 scripts
+│   ├── 🐍 analyse_results.py
+│   ├── 🐍 check_gpu.py
+│   ├── 🐍 check_masks.py
+│   ├── 🐍 check_splits.py
+│   ├── 🐍 convert_isic_2019_csv.py
+│   ├── 🐍 datasets_hg.py
+│   ├── 🐍 datasets.py
+│   ├── 🐍 prepare_isic.py
+│   ├── 🐍 prepare_isic2017.py
+│   ├── 🐍 resplit_isic2017.py
+│   ├── 🐍 sanity_check.py
+│   └── 🐍 split_dataset.py
+├── 📁 src
+│   └── 📁 sam2
+│       ├── 📁 assets
+│       │   ├── 📄 model_diagram.png
+│       │   └── 📄 sa_v_dataset.jpg
+│       ├── 📁 checkpoints
+│       │   └── 🐚 download_ckpts.sh
+│       ├── 📁 demo
+│       │   ├── 📁 backend
+│       │   │   └── 📁 server
+│       │   │       ├── 📁 data
+│       │   │       │   ├── 🐍 data_types.py
+│       │   │       │   ├── 🐍 loader.py
+│       │   │       │   ├── 🐍 resolver.py
+│       │   │       │   ├── 🐍 schema.py
+│       │   │       │   ├── 🐍 store.py
+│       │   │       │   └── 🐍 transcoder.py
+│       │   │       ├── 📁 inference
+│       │   │       │   ├── 🐍 data_types.py
+│       │   │       │   ├── 🐍 multipart.py
+│       │   │       │   └── 🐍 predictor.py
+│       │   │       ├── 🐍 app_conf.py
+│       │   │       └── 🐍 app.py
+│       │   ├── 📁 data
+│       │   │   └── 📁 gallery
+│       │   │       ├── 📄 01_dog.mp4
+│       │   │       ├── 📄 02_cups.mp4
+│       │   │       ├── 📄 03_blocks.mp4
+│       │   │       ├── 📄 04_coffee.mp4
+│       │   │       └── 📄 05_default_juggle.mp4
+│       │   ├── 📁 frontend
+│       │   │   ├── 📁 public
+│       │   │   │   └── 📁 fonts
+│       │   │   │       └── 📄 Inter-VariableFont_opsz,wght.ttf
+│       │   │   ├── 📁 schemas
+│       │   │   │   ├── 📄 inference-api-schema.graphql
+│       │   │   │   ├── 🔷 merge-schemas.ts
+│       │   │   │   └── 📄 video-api-schema.graphql
+│       │   │   ├── 📁 src
+│       │   │   │   ├── 📁 assets
+│       │   │   │   │   ├── 📁 icons
+│       │   │   │   │   │   ├── 📄 angery.png
+│       │   │   │   │   │   ├── 📄 heart.png
+│       │   │   │   │   │   └── 📄 whistle.png
+│       │   │   │   │   ├── 📁 scss
+│       │   │   │   │   │   └── 🎨 App.scss
+│       │   │   │   │   └── 📁 videos
+│       │   │   │   │       ├── 📄 sam2_720px_dark.mp4
+│       │   │   │   │       └── 📄 sam2_video_poster.png
+│       │   │   │   ├── 📁 common
+│       │   │   │   │   ├── 📁 codecs
+│       │   │   │   │   │   ├── 🔷 VideoDecoder.ts
+│       │   │   │   │   │   ├── 🔷 VideoEncoder.ts
+│       │   │   │   │   │   └── 🔷 WebCodecUtils.ts
+│       │   │   │   │   ├── 📁 components
+│       │   │   │   │   │   ├── 📁 annotations
+│       │   │   │   │   │   │   ├── 📄 AddObjectButton.tsx
+│       │   │   │   │   │   │   ├── 📄 ClearAllPointsInVideoButton.tsx
+│       │   │   │   │   │   │   ├── 📄 CloseSessionButton.tsx
+│       │   │   │   │   │   │   ├── 📄 FirstClickView.tsx
+│       │   │   │   │   │   │   ├── 📄 LimitNotice.tsx
+│       │   │   │   │   │   │   ├── 📄 MobileObjectsList.tsx
+│       │   │   │   │   │   │   ├── 📄 MobileObjectsToolbar.tsx
+│       │   │   │   │   │   │   ├── 📄 MobileObjectsToolbarHeader.tsx
+│       │   │   │   │   │   │   ├── 📄 ObjectActions.tsx
+│       │   │   │   │   │   │   ├── 📄 ObjectPlaceholder.tsx
+│       │   │   │   │   │   │   ├── 📄 ObjectsToolbar.tsx
+│       │   │   │   │   │   │   ├── 📄 ObjectsToolbarBottomActions.tsx
+│       │   │   │   │   │   │   ├── 📄 ObjectsToolbarHeader.tsx
+│       │   │   │   │   │   │   ├── 📄 ObjectThumbnail.tsx
+│       │   │   │   │   │   │   ├── 🔷 ObjectUtils.ts
+│       │   │   │   │   │   │   ├── 📄 PointsToggle.tsx
+│       │   │   │   │   │   │   ├── 📄 PrimaryCTAButton.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarObject.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarObjectContainer.tsx
+│       │   │   │   │   │   │   ├── 📄 TrackletsAnnotation.tsx
+│       │   │   │   │   │   │   ├── 📄 TrackletSwimlane.tsx
+│       │   │   │   │   │   │   └── 🔷 useTracklets.ts
+│       │   │   │   │   │   ├── 📁 button
+│       │   │   │   │   │   │   ├── 📄 GradientBorder.tsx
+│       │   │   │   │   │   │   ├── 📄 PlaybackButton.tsx
+│       │   │   │   │   │   │   ├── 📄 PrimaryCTAButton.tsx
+│       │   │   │   │   │   │   ├── 📄 ResponsiveButton.tsx
+│       │   │   │   │   │   │   └── 📄 TrackAndPlayButton.tsx
+│       │   │   │   │   │   ├── 📁 code
+│       │   │   │   │   │   │   └── 🔷 InitializeLocalMonaco.ts
+│       │   │   │   │   │   ├── 📁 effects
+│       │   │   │   │   │   │   ├── 📄 BackgroundEffects.tsx
+│       │   │   │   │   │   │   ├── 📄 EffectsCarousel.tsx
+│       │   │   │   │   │   │   ├── 📄 EffectsCarouselShadow.tsx
+│       │   │   │   │   │   │   ├── 📄 EffectsToolbar.tsx
+│       │   │   │   │   │   │   ├── 📄 EffectsToolbarBottomActions.tsx
+│       │   │   │   │   │   │   ├── 📄 EffectsToolbarHeader.tsx
+│       │   │   │   │   │   │   ├── 🔷 EffectsUtils.ts
+│       │   │   │   │   │   │   ├── 📄 EffectVariantBadge.tsx
+│       │   │   │   │   │   │   ├── 📄 HighlightEffects.tsx
+│       │   │   │   │   │   │   ├── 📄 MobileEffectsToolbar.tsx
+│       │   │   │   │   │   │   └── 📄 MoreFunEffects.tsx
+│       │   │   │   │   │   ├── 📁 gallery
+│       │   │   │   │   │   │   ├── 📁 __generated__
+│       │   │   │   │   │   │   │   ├── 🔷 DemoVideoGalleryModalQuery.graphql.ts
+│       │   │   │   │   │   │   │   ├── 🔷 DemoVideoGalleryQuery.graphql.ts
+│       │   │   │   │   │   │   │   └── 🔷 useUploadVideoMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 📄 ChangeVideoModal.tsx
+│       │   │   │   │   │   │   ├── 📄 DefaultVideoGalleryModalTrigger.tsx
+│       │   │   │   │   │   │   ├── 📄 DemoVideoGallery.tsx
+│       │   │   │   │   │   │   ├── 📄 DemoVideoGalleryModal.tsx
+│       │   │   │   │   │   │   ├── 🔷 useUploadVideo.ts
+│       │   │   │   │   │   │   ├── 📄 VideoGalleryUploadPhoto.tsx
+│       │   │   │   │   │   │   └── 📄 VideoPhoto.tsx
+│       │   │   │   │   │   ├── 📁 icons
+│       │   │   │   │   │   │   └── 📄 GitHubIcon.tsx
+│       │   │   │   │   │   ├── 📁 options
+│       │   │   │   │   │   │   ├── 📁 __generated__
+│       │   │   │   │   │   │   │   └── 🔷 GetLinkOptionShareVideoMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 📄 DownloadOption.tsx
+│       │   │   │   │   │   │   ├── 📄 GalleryOption.tsx
+│       │   │   │   │   │   │   ├── 📄 MoreOptionsToolbar.tsx
+│       │   │   │   │   │   │   ├── 📄 MoreOptionsToolbarBottomActions.tsx
+│       │   │   │   │   │   │   ├── 📄 OptionButton.tsx
+│       │   │   │   │   │   │   ├── 📄 ShareSection.tsx
+│       │   │   │   │   │   │   ├── 🔷 ShareUtils.ts
+│       │   │   │   │   │   │   ├── 📄 TryAnotherVideoSection.tsx
+│       │   │   │   │   │   │   ├── 📄 UploadOption.tsx
+│       │   │   │   │   │   │   └── 🔷 useDownloadVideo.ts
+│       │   │   │   │   │   ├── 📁 session
+│       │   │   │   │   │   │   ├── 📁 __generated__
+│       │   │   │   │   │   │   │   └── 🔷 useCloseSessionBeforeUnloadMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 📄 RestartSessionButton.tsx
+│       │   │   │   │   │   │   ├── 🔷 useCloseSessionBeforeUnload.ts
+│       │   │   │   │   │   │   └── 🔷 useRestartSession.ts
+│       │   │   │   │   │   ├── 📁 snackbar
+│       │   │   │   │   │   │   ├── 🔷 DemoMessagesSnackbarUtils.ts
+│       │   │   │   │   │   │   ├── 📄 MessagesSnackbar.tsx
+│       │   │   │   │   │   │   ├── 🔷 snackbarAtoms.ts
+│       │   │   │   │   │   │   ├── 🔷 useDemoMessagesSnackbar.ts
+│       │   │   │   │   │   │   ├── 🔷 useExpireMessage.ts
+│       │   │   │   │   │   │   └── 🔷 useMessagesSnackbar.ts
+│       │   │   │   │   │   ├── 📁 toolbar
+│       │   │   │   │   │   │   ├── 📄 DesktopToolbar.tsx
+│       │   │   │   │   │   │   ├── 📄 MobileToolbar.tsx
+│       │   │   │   │   │   │   ├── 📄 Toolbar.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarActionIcon.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarBottomActionsWrapper.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarConfig.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarHeaderWrapper.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarProgressChip.tsx
+│       │   │   │   │   │   │   ├── 📄 ToolbarSection.tsx
+│       │   │   │   │   │   │   ├── 🔷 useListenToStreamingState.ts
+│       │   │   │   │   │   │   └── 🔷 useToolbarTabs.ts
+│       │   │   │   │   │   ├── 📁 video
+│       │   │   │   │   │   │   ├── 📁 editor
+│       │   │   │   │   │   │   │   ├── 🔷 atoms.ts
+│       │   │   │   │   │   │   │   ├── 📄 DemoVideoEditor.tsx
+│       │   │   │   │   │   │   │   ├── 🔷 ImageUtils.ts
+│       │   │   │   │   │   │   │   ├── 🔷 useResetEditor.ts
+│       │   │   │   │   │   │   │   ├── 🔷 useVideo.ts
+│       │   │   │   │   │   │   │   ├── 🔷 useVideoEffect.ts
+│       │   │   │   │   │   │   │   ├── 📄 VideoEditor.tsx
+│       │   │   │   │   │   │   │   └── 🔷 VideoEditorUtils.ts
+│       │   │   │   │   │   │   ├── 📁 effects
+│       │   │   │   │   │   │   │   ├── 📁 shaders
+│       │   │   │   │   │   │   │   ├── 🔷 ArrowGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 BackgroundBlurEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 BackgroundTextEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 BaseGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 BurstGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 CutoutGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 DesaturateEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 Effect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 Effects.ts
+│       │   │   │   │   │   │   │   ├── 🔷 EffectUtils.ts
+│       │   │   │   │   │   │   │   ├── 🔷 EraseBackgroundEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 EraseForegroundEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 EraseForegroundGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 GradientEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 NoisyMaskEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 OriginalEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 OverlayEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 PixelateEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 PixelateMaskGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 ReplaceGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 ScopeGLEffect.ts
+│       │   │   │   │   │   │   │   ├── 🔷 SobelEffect.ts
+│       │   │   │   │   │   │   │   └── 🔷 VibrantMaskEffect.ts
+│       │   │   │   │   │   │   ├── 📁 filmstrip
+│       │   │   │   │   │   │   │   ├── 🔷 atoms.ts
+│       │   │   │   │   │   │   │   ├── 📄 FilmstripUtil.tsx
+│       │   │   │   │   │   │   │   ├── 🔷 SelectedFrameHelper.ts
+│       │   │   │   │   │   │   │   ├── 🔷 useDisableScrolling.ts
+│       │   │   │   │   │   │   │   ├── 🔷 useSelectedFrameHelper.ts
+│       │   │   │   │   │   │   │   └── 📄 VideoFilmstrip.tsx
+│       │   │   │   │   │   │   ├── 📁 layers
+│       │   │   │   │   │   │   │   ├── 📄 InteractionLayer.tsx
+│       │   │   │   │   │   │   │   └── 📄 PointsLayer.tsx
+│       │   │   │   │   │   │   ├── 📄 ChangeVideoModal.tsx
+│       │   │   │   │   │   │   ├── 🔷 EventEmitter.ts
+│       │   │   │   │   │   │   ├── 🔷 useInputVideo.ts
+│       │   │   │   │   │   │   ├── 🔷 useVideoWorker.ts
+│       │   │   │   │   │   │   ├── 📄 Video.tsx
+│       │   │   │   │   │   │   ├── 📄 VideoFilmstripWithPlayback.tsx
+│       │   │   │   │   │   │   ├── 📄 VideoLoadingOverlay.tsx
+│       │   │   │   │   │   │   ├── 🔷 VideoWorker.ts
+│       │   │   │   │   │   │   ├── 🔷 VideoWorkerBridge.ts
+│       │   │   │   │   │   │   ├── 🔷 VideoWorkerContext.ts
+│       │   │   │   │   │   │   └── 🔷 VideoWorkerTypes.ts
+│       │   │   │   │   │   ├── 📄 MobileFirstClickBanner.tsx
+│       │   │   │   │   │   ├── 📄 Tooltip.tsx
+│       │   │   │   │   │   └── 📄 useFunctionThrottle.tsx
+│       │   │   │   │   ├── 📁 error
+│       │   │   │   │   │   ├── 📄 ErrorFallback.tsx
+│       │   │   │   │   │   ├── 📄 ErrorReport.tsx
+│       │   │   │   │   │   ├── 🔷 errorReportAtom.ts
+│       │   │   │   │   │   ├── 🔷 ErrorSerializationUtils.ts
+│       │   │   │   │   │   ├── 🔷 ErrorUtils.ts
+│       │   │   │   │   │   └── 📄 useReportError.tsx
+│       │   │   │   │   ├── 📁 loading
+│       │   │   │   │   │   ├── 📄 LoadingMessage.tsx
+│       │   │   │   │   │   ├── 📄 LoadingStateScreen.tsx
+│       │   │   │   │   │   ├── 📄 StaticVideoPlayer.tsx
+│       │   │   │   │   │   └── 📄 UploadLoadingScreen.tsx
+│       │   │   │   │   ├── 📁 logger
+│       │   │   │   │   │   ├── 🔷 DemoLogger.ts
+│       │   │   │   │   │   ├── 🔷 LogEnvironment.ts
+│       │   │   │   │   │   └── 🔷 Logger.ts
+│       │   │   │   │   ├── 📁 screen
+│       │   │   │   │   │   └── 📄 useScreenSize.tsx
+│       │   │   │   │   ├── 📁 tracker
+│       │   │   │   │   │   ├── 📁 __generated__
+│       │   │   │   │   │   │   ├── 🔷 SAM2ModelAddNewPointsMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 🔷 SAM2ModelCancelPropagateInVideoMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 🔷 SAM2ModelClearPointsInFrameMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 🔷 SAM2ModelClearPointsInVideoMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 🔷 SAM2ModelCloseSessionMutation.graphql.ts
+│       │   │   │   │   │   │   ├── 🔷 SAM2ModelRemoveObjectMutation.graphql.ts
+│       │   │   │   │   │   │   └── 🔷 SAM2ModelStartSessionMutation.graphql.ts
+│       │   │   │   │   │   ├── 🔷 SAM2Model.ts
+│       │   │   │   │   │   ├── 🔷 Tracker.ts
+│       │   │   │   │   │   ├── 🔷 Trackers.ts
+│       │   │   │   │   │   └── 🔷 TrackerTypes.ts
+│       │   │   │   │   └── 📁 utils
+│       │   │   │   │       ├── 🔷 emptyFunction.ts
+│       │   │   │   │       ├── 🔷 FileUtils.ts
+│       │   │   │   │       ├── 🔷 ImageUtils.ts
+│       │   │   │   │       ├── 🔷 MaskUtils.ts
+│       │   │   │   │       ├── 🔷 MultipartStream.ts
+│       │   │   │   │       ├── 🔷 ShaderUtils.ts
+│       │   │   │   │       └── 🔷 uuid.ts
+│       │   │   │   ├── 📁 debug
+│       │   │   │   │   └── 📁 stats
+│       │   │   │   │       ├── 🔷 Stats.ts
+│       │   │   │   │       └── 📄 StatsView.tsx
+│       │   │   │   ├── 📁 demo
+│       │   │   │   │   ├── 🔷 atoms.ts
+│       │   │   │   │   ├── 📄 DemoConfig.tsx
+│       │   │   │   │   ├── 📄 DemoErrorFallback.tsx
+│       │   │   │   │   ├── 📄 DemoSuspenseFallback.tsx
+│       │   │   │   │   └── 📄 SAM2DemoApp.tsx
+│       │   │   │   ├── 📁 graphql
+│       │   │   │   │   ├── 📁 errors
+│       │   │   │   │   │   ├── 🔷 CreateFilmstripError.ts
+│       │   │   │   │   │   ├── 🔷 DrawFrameError.ts
+│       │   │   │   │   │   └── 🔷 WebGLContextError.ts
+│       │   │   │   │   ├── 🔷 fetchGraphQL.ts
+│       │   │   │   │   ├── 🔷 RelayEnvironment.ts
+│       │   │   │   │   └── 📄 RelayEnvironmentProvider.tsx
+│       │   │   │   ├── 📁 jscocotools
+│       │   │   │   │   └── 🔷 mask.ts
+│       │   │   │   ├── 📁 layouts
+│       │   │   │   │   ├── 📄 DemoPageLayout.tsx
+│       │   │   │   │   └── 📄 RootLayout.tsx
+│       │   │   │   ├── 📁 routes
+│       │   │   │   │   ├── 📁 __generated__
+│       │   │   │   │   │   └── 🔷 DemoPageQuery.graphql.ts
+│       │   │   │   │   ├── 📄 DemoPage.tsx
+│       │   │   │   │   ├── 📄 DemoPageWrapper.tsx
+│       │   │   │   │   └── 📄 PageNotFoundPage.tsx
+│       │   │   │   ├── 📁 settings
+│       │   │   │   │   ├── 📄 ApprovableInput.tsx
+│       │   │   │   │   ├── 📄 SAM2Settings.tsx
+│       │   │   │   │   ├── 📄 SettingsContextProvider.tsx
+│       │   │   │   │   ├── 📄 SettingsModal.tsx
+│       │   │   │   │   ├── 🔷 SettingsReducer.ts
+│       │   │   │   │   └── 📄 useSettingsContext.tsx
+│       │   │   │   ├── 📁 theme
+│       │   │   │   │   ├── 🔷 colors.ts
+│       │   │   │   │   ├── 🔷 gradientStyle.ts
+│       │   │   │   │   └── 🔷 tokens.stylex.ts
+│       │   │   │   ├── 📁 types
+│       │   │   │   │   └── 📁 mp4box
+│       │   │   │   │       └── 🔷 index.d.ts
+│       │   │   │   ├── 📄 App.tsx
+│       │   │   │   ├── 📄 main.tsx
+│       │   │   │   └── 🔷 vite-env.d.ts
+│       │   │   ├── 🐳 frontend.Dockerfile
+│       │   │   ├── 🌐 index.html
+│       │   │   ├── 🗒️ package.json
+│       │   │   ├── 🟨 postcss.config.js
+│       │   │   ├── 📄 schema.graphql
+│       │   │   ├── 🟨 tailwind.config.js
+│       │   │   ├── 🗒️ tsconfig.json
+│       │   │   ├── 🗒️ tsconfig.node.json
+│       │   │   └── 🔷 vite.config.ts
+│       │   └── 📝 README.md
+│       ├── 📁 notebooks
+│       │   ├── 📁 images
+│       │   │   ├── 📄 cars.jpg
+│       │   │   ├── 📄 groceries.jpg
+│       │   │   └── 📄 truck.jpg
+│       │   ├── 📁 videos
+│       │   │   ├── 📁 bedroom
+│       │   │   │   … (200 items, collapsed)
+│       │   │   └── 📄 bedroom.mp4
+│       │   ├── 📄 automatic_mask_generator_example.ipynb
+│       │   ├── 📄 image_predictor_example.ipynb
+│       │   └── 📄 video_predictor_example.ipynb
+│       ├── 📁 sam2
+│       │   ├── 📁 configs
+│       │   │   ├── 📁 sam2
+│       │   │   │   ├── ⚙️ sam2_hiera_b+.yaml
+│       │   │   │   ├── ⚙️ sam2_hiera_l.yaml
+│       │   │   │   ├── ⚙️ sam2_hiera_s.yaml
+│       │   │   │   └── ⚙️ sam2_hiera_t.yaml
+│       │   │   ├── 📁 sam2.1
+│       │   │   │   ├── ⚙️ sam2.1_hiera_b+.yaml
+│       │   │   │   ├── ⚙️ sam2.1_hiera_l.yaml
+│       │   │   │   ├── ⚙️ sam2.1_hiera_s.yaml
+│       │   │   │   └── ⚙️ sam2.1_hiera_t.yaml
+│       │   │   └── 📁 sam2.1_training
+│       │   │       └── ⚙️ sam2.1_hiera_b+_MOSE_finetune.yaml
+│       │   ├── 📁 csrc
+│       │   │   └── 📄 connected_components.cu
+│       │   ├── 📁 modeling
+│       │   │   ├── 📁 backbones
+│       │   │   │   ├── 🐍 __init__.py
+│       │   │   │   ├── 🐍 hieradet.py
+│       │   │   │   ├── 🐍 image_encoder.py
+│       │   │   │   └── 🐍 utils.py
+│       │   │   ├── 📁 sam
+│       │   │   │   ├── 🐍 __init__.py
+│       │   │   │   ├── 🐍 mask_decoder.py
+│       │   │   │   ├── 🐍 prompt_encoder.py
+│       │   │   │   └── 🐍 transformer.py
+│       │   │   ├── 🐍 __init__.py
+│       │   │   ├── 🐍 memory_attention.py
+│       │   │   ├── 🐍 memory_encoder.py
+│       │   │   ├── 🐍 position_encoding.py
+│       │   │   ├── 🐍 sam2_base.py
+│       │   │   └── 🐍 sam2_utils.py
+│       │   ├── 📁 utils
+│       │   │   ├── 🐍 __init__.py
+│       │   │   ├── 🐍 amg.py
+│       │   │   ├── 🐍 misc.py
+│       │   │   └── 🐍 transforms.py
+│       │   ├── 🐍 __init__.py
+│       │   ├── 🐍 automatic_mask_generator.py
+│       │   ├── 🐍 benchmark.py
+│       │   ├── 🐍 build_sam.py
+│       │   ├── ⚙️ sam2_hiera_b+.yaml
+│       │   ├── ⚙️ sam2_hiera_l.yaml
+│       │   ├── ⚙️ sam2_hiera_s.yaml
+│       │   ├── ⚙️ sam2_hiera_t.yaml
+│       │   ├── 🐍 sam2_image_predictor.py
+│       │   ├── 🐍 sam2_video_predictor_legacy.py
+│       │   └── 🐍 sam2_video_predictor.py
+│       ├── 📁 sav_dataset
+│       │   ├── 📁 example
+│       │   │   ├── 🗒️ sav_000001_auto.json
+│       │   │   ├── 🗒️ sav_000001_manual.json
+│       │   │   └── 📄 sav_000001.mp4
+│       │   ├── 📁 utils
+│       │   │   ├── 🐍 sav_benchmark.py
+│       │   │   └── 🐍 sav_utils.py
+│       │   ├── 📄 LICENSE
+│       │   ├── 📄 LICENSE_DAVIS
+│       │   ├── 📄 LICENSE_VOS_BENCHMARK
+│       │   ├── 📝 README.md
+│       │   ├── 📃 requirements.txt
+│       │   ├── 🐍 sav_evaluator.py
+│       │   └── 📄 sav_visualization_example.ipynb
+│       ├── 📁 tools
+│       │   ├── 📝 README.md
+│       │   └── 🐍 vos_inference.py
+│       ├── 📁 training
+│       │   ├── 📁 assets
+│       │   │   ├── 📃 MOSE_sample_train_list.txt
+│       │   │   └── 📃 MOSE_sample_val_list.txt
+│       │   ├── 📁 dataset
+│       │   │   ├── 🐍 __init__.py
+│       │   │   ├── 🐍 sam2_datasets.py
+│       │   │   ├── 🐍 transforms.py
+│       │   │   ├── 🐍 utils.py
+│       │   │   ├── 🐍 vos_dataset.py
+│       │   │   ├── 🐍 vos_raw_dataset.py
+│       │   │   ├── 🐍 vos_sampler.py
+│       │   │   └── 🐍 vos_segment_loader.py
+│       │   ├── 📁 model
+│       │   │   ├── 🐍 __init__.py
+│       │   │   └── 🐍 sam2.py
+│       │   ├── 📁 scripts
+│       │   │   └── 🐍 sav_frame_extraction_submitit.py
+│       │   ├── 📁 utils
+│       │   │   ├── 🐍 __init__.py
+│       │   │   ├── 🐍 checkpoint_utils.py
+│       │   │   ├── 🐍 data_utils.py
+│       │   │   ├── 🐍 distributed.py
+│       │   │   ├── 🐍 logger.py
+│       │   │   └── 🐍 train_utils.py
+│       │   ├── 🐍 __init__.py
+│       │   ├── 🐍 loss_fns.py
+│       │   ├── 🐍 optimizer.py
+│       │   ├── 📝 README.md
+│       │   ├── 🐍 train.py
+│       │   └── 🐍 trainer.py
+│       ├── 🐳 backend.Dockerfile
+│       ├── 📝 CODE_OF_CONDUCT.md
+│       ├── 📝 CONTRIBUTING.md
+│       ├── ⚙️ docker-compose.yaml
+│       ├── 📝 INSTALL.md
+│       ├── 📄 LICENSE
+│       ├── 📄 LICENSE_cctorch
+│       ├── 📄 MANIFEST.in
+│       ├── 📄 pyproject.toml
+│       ├── 📝 README.md
+│       ├── 📝 RELEASE_NOTES.md
+│       └── 🐍 setup.py
+├── 📁 training
+│   ├── 🐍 __init__.py
+│   ├── 🐍 simple_trainer.py
+│   └── 🐍 trainer.py
+├── 📁 utils
+│   ├── 🐍 __init__.py
+│   ├── 🐍 aggregate_benchmark.py
+│   ├── 🐍 benchmark_report.py
+│   ├── 🐍 check_missing_masks.py
+│   ├── 🐍 filter_csv.py
+│   ├── 🐍 generate_csv.py
+│   ├── 🐍 loss.py
+│   ├── 🐍 metrics.py
+│   └── 🐍 report_generator.py
+├── 🐍 __init__.py
+├── 🐍 config.py
+├── 📄 LICENSE
+├── 📃 load_state.txt
+├── 📄 move_isic2016.cmd
+├── 📝 REPOSITORY_RESTRUCTURE_REPORT.md
+├── 📃 requirements.txt
+├── 📄 run_all.bat
+├── 📄 sort_isic2016.cmd
+├── 📃 structure_2026-06-09T07-08-05-944Z.txt
+├── 📃 structure_2026-06-26T18-19-10-032Z.txt
+├── 🐍 train_all.py
+└── 🐍 train.py

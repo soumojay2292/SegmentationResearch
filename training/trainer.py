@@ -59,7 +59,9 @@ class BoundaryLoss(nn.Module):
         ky = self.ky.to(x.dtype)
         gx = F.conv2d(x, kx, padding=1)
         gy = F.conv2d(x, ky, padding=1)
-        return (gx ** 2 + gy ** 2).sqrt().clamp(0, 1)
+        # +1e-6 keeps the sqrt gradient finite at flat regions (gx=gy=0);
+        # without it, d/du sqrt(u) = 1/(2*sqrt(u)) -> inf at u=0 (see FGFF_NUMERICAL_ANALYSIS_REPORT.md)
+        return torch.sqrt(gx ** 2 + gy ** 2 + 1e-6).clamp(0, 1)
 
     def forward(self, probs: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
         return F.l1_loss(self._edges(probs), self._edges(targets))
@@ -67,49 +69,139 @@ class BoundaryLoss(nn.Module):
 
 class MAFFNetLoss(nn.Module):
     """
-    epoch < 10  → total = mean(dice + bce) over p1–p4          (warmup)
-    epoch >= 10 → total = mean(dice + bce) + 0.01 · boundary   (full)
+    Boundary-centric Dual Supervision (BcDS) — see CONTRIBUTION_DESIGN.md.
 
-    bce      = BCEWithLogitsLoss(pos_weight=2.0)  raw logits
-    dice     = DiceLoss(sigmoid(logits))
-    boundary = L1(sobel(avg_pool(sigmoid(logits))), sobel(gt))
+        L_total = L_seg
+                  + lambda_bds(t) * L_BDS      # N1: boundary-aware deep supervision
+                  + lambda_ewr     * L_EWR      # N2: edge-weighted reconstruction
+
+    L_seg = mean_i [ Dice(sigmoid(p_i), y) (+ BCE if use_bce) ]            (4 heads)
+    L_BDS = (1/Σw) Σ_i w_i · L1( Sobel(sigmoid(p_i)), Sobel(y) )
+    B(y)  = boundary map from GT  (sobel-thin | morphological; optional band_r)
+    W     = 1 + alpha · B_r(src)   ;  src ∈ {GT boundary, input-image edges}
+    L_EWR = Σ( W ⊙ (rec01 - x)^2 ) / ( ΣW · C )         (normalised weighted MSE)
+    lambda_bds(t) = lambda_bds * min(1, t / t_warm)     (t_warm=0 ⇒ always on)
+
+    All terms are switchable (use_bds / use_ewr / use_bce) for ablation.
+    Defaults = full BcDS.
     """
-    def __init__(self):
+    def __init__(
+        self,
+        lambda_bds: float = 0.05,
+        lambda_ewr: float = 0.05,
+        alpha:      float = 3.0,
+        t_warm:     int   = 5,
+        band_r:     int   = 1,
+        ds_weights        = (1.0, 1.0, 1.0, 0.01),
+        use_bds:    bool  = True,
+        use_ewr:    bool  = True,
+        use_bce:    bool  = True,
+        smooth_pred: bool = True,
+        bmap:       str   = "sobel",      # "sobel" | "morph"
+        ewr_edge_source: str = "gt",      # "gt" | "image"
+        pos_weight: float = 2.0,
+    ):
         super().__init__()
         self.dice     = DiceLoss()
         self.boundary = BoundaryLoss()
-        self.register_buffer("pos_weight", torch.tensor([2.0]))
+        self.register_buffer("pos_weight", torch.tensor([pos_weight]))
+        self.lambda_bds = lambda_bds
+        self.lambda_ewr = lambda_ewr
+        self.alpha      = alpha
+        self.t_warm     = t_warm
+        self.band_r     = band_r
+        self.ds_weights = tuple(ds_weights)
+        self.use_bds    = use_bds
+        self.use_ewr    = use_ewr
+        self.use_bce    = use_bce
+        self.smooth_pred = smooth_pred
+        self.bmap       = bmap
+        self.ewr_edge_source = ewr_edge_source
+
+    def _edge_mag(self, x: torch.Tensor) -> torch.Tensor:
+        return self.boundary._edges(x)             # Sobel magnitude, clamp[0,1]
+
+    def _boundary_map(self, y: torch.Tensor) -> torch.Tensor:
+        """B(y): GT lesion-boundary map (sobel-thin or morphological), optional band."""
+        if self.bmap == "morph":
+            k = 3
+            dil = F.max_pool2d(y, k, 1, k // 2)
+            ero = -F.max_pool2d(-y, k, 1, k // 2)
+            b = (dil - ero).clamp(0, 1)
+        else:
+            b = self._edge_mag(y)
+        if self.band_r > 0:
+            ksz = 2 * self.band_r + 1
+            b = F.max_pool2d(b, ksz, 1, self.band_r)   # widen edge to a band
+        return b.clamp(0, 1)
 
     def forward(
         self,
         preds: Tuple[torch.Tensor, ...],   # (p1,p2,p3,p4,rec)
         mask:  torch.Tensor,               # (B,1,H,W) float in [0,1]
         epoch: int = 0,
+        image: torch.Tensor = None,        # (B,3,H,W) in [0,1] — reconstruction target
     ) -> Tuple[torch.Tensor, Dict[str, float]]:
-        p1, p2, p3, p4, _rec = preds
-        mask = mask.clamp(0, 1)
+        p1, p2, p3, p4, rec = preds
+        y = mask.clamp(0, 1)
+        heads = (p1, p2, p3, p4)
+        w = self.ds_weights
 
-        seg_loss = bnd_loss = 0.0
-        for p in (p1, p2, p3, p4):
+        # --- L_seg: deep-supervised Dice [+ BCE] ---
+        seg_loss = 0.0
+        for p in heads:
             prob = torch.sigmoid(p)
-            bce  = F.binary_cross_entropy_with_logits(p, mask, pos_weight=self.pos_weight)
-            seg_loss = seg_loss + self.dice(prob, mask) + bce
-            if epoch >= 10:
-                prob_smooth = F.avg_pool2d(prob, kernel_size=3, stride=1, padding=1)
-                bnd_loss    = bnd_loss + self.boundary(prob_smooth, mask)
+            l = self.dice(prob, y)
+            if self.use_bce:
+                l = l + F.binary_cross_entropy_with_logits(p, y, pos_weight=self.pos_weight)
+            seg_loss = seg_loss + l
+        seg_loss = seg_loss / len(heads)
+        total = seg_loss
 
-        seg_loss = (seg_loss / 4.0).mean()
+        # --- N1: Boundary-aware Deep Supervision ---
+        # Compute the warmup weight first; when it is exactly zero, skip the
+        # entire BDS computation so no autograd graph is built. This prevents a
+        # zeroed term from injecting 0 * inf = NaN through the edge sqrt.
+        bds_loss = torch.zeros((), device=y.device)
+        ramp = 1.0 if self.t_warm <= 0 else min(1.0, epoch / float(self.t_warm))
+        bds_weight = self.lambda_bds * ramp
+        if self.use_bds and bds_weight > 0:
+            sy = self._edge_mag(y)
+            acc = 0.0
+            for wi, p in zip(w, heads):
+                prob = torch.sigmoid(p)
+                if self.smooth_pred:
+                    prob = F.avg_pool2d(prob, kernel_size=3, stride=1, padding=1)
+                acc = acc + wi * F.l1_loss(self._edge_mag(prob), sy)
+            bds_loss = acc / float(sum(w))
+            total = total + bds_weight * bds_loss
 
-        if epoch >= 10:
-            bnd_loss = (bnd_loss / 4.0).mean()
-            total    = seg_loss + 0.01 * bnd_loss
-        else:
-            bnd_loss = torch.tensor(0.0)
-            total    = seg_loss
+        # --- N2: Edge-weighted Reconstruction ---
+        ewr_loss = torch.zeros((), device=y.device)
+        if self.use_ewr and image is not None and rec is not None and self.lambda_ewr > 0:
+            rec01 = (rec + 1.0) / 2.0
+            if rec01.shape[-2:] != image.shape[-2:]:
+                rec01 = F.interpolate(rec01, size=image.shape[-2:],
+                                      mode='bilinear', align_corners=False)
+            if self.ewr_edge_source == "image":
+                src = image.mean(dim=1, keepdim=True)
+                B = self._edge_mag(src)
+                if self.band_r > 0:
+                    B = F.max_pool2d(B, 2 * self.band_r + 1, 1, self.band_r)
+                B = B.clamp(0, 1)
+            else:
+                B = self._boundary_map(y)             # GT-boundary (coherent with N1)
+            Wt = 1.0 + self.alpha * B                 # (B,1,H,W), base weight 1 everywhere
+            sq = (rec01 - image) ** 2                 # (B,C,H,W)
+            ewr_loss = (Wt * sq).sum() / (Wt.sum() * sq.shape[1] + 1e-8)
+            total = total + self.lambda_ewr * ewr_loss
 
         return total, {
-            "seg_loss":      seg_loss.item(),
-            "boundary_loss": bnd_loss.item(),
+            "seg_loss":      float(seg_loss.item()),
+            "boundary_loss": float(bds_loss.item()),   # = BDS (kept name for CSV compat)
+            "bds_loss":      float(bds_loss.item()),
+            "ewr_loss":      float(ewr_loss.item()),
+            "rec_loss":      float(ewr_loss.item()),   # alias (back-compat)
         }
 
 
@@ -165,6 +257,7 @@ class MAFFNetTrainer:
         lr:           float = 1e-3,
         weight_decay: float = 0.01,
         device:       Optional[torch.device] = None,
+        loss_kwargs:  Optional[dict] = None,
     ):
         self.model       = model
         self.train_loader = train_loader
@@ -178,9 +271,17 @@ class MAFFNetTrainer:
         )
         self.model = self.model.to(self.device)
 
-        # Trainable params only (backbone is frozen)
-        trainable = [p for p in model.parameters() if p.requires_grad]
-        self.optim = AdamW(trainable, lr=lr, weight_decay=weight_decay)
+        # Trainable params only (backbone is frozen); MMPA gamma excluded from weight decay
+        decay, no_decay = [], []
+        for pname, p in model.named_parameters():
+            if not p.requires_grad:
+                continue
+            (no_decay if pname.endswith("gamma") else decay).append(p)
+        self.optim = AdamW(
+            [{"params": decay,    "weight_decay": weight_decay},
+             {"params": no_decay, "weight_decay": 0.0}],
+            lr=lr,
+        )
 
         # Linear decay: lr → 0 over num_epochs
         self.scheduler = LinearLR(
@@ -190,8 +291,8 @@ class MAFFNetTrainer:
             total_iters=num_epochs,
         )
 
-        self.criterion = MAFFNetLoss().to(self.device)
-        self.scaler    = GradScaler('cuda')
+        self.criterion = MAFFNetLoss(**(loss_kwargs or {})).to(self.device)
+        # bf16 autocast: GradScaler not required (bf16 has fp32-range exponent)
 
         self.best_dice = 0.0
         self._csv_path = self.save_dir / "training_log.csv"
@@ -208,6 +309,7 @@ class MAFFNetTrainer:
                 "train_loss", "train_seg_loss", "train_boundary_loss",
                 "val_loss", "val_dice", "val_miou",
                 "val_acc", "val_sensitivity", "val_specificity", "val_f1",
+                "train_ewr_loss",
             ])
 
     def _log_csv(self, row: list):
@@ -219,7 +321,7 @@ class MAFFNetTrainer:
     # ------------------------------------------------------------------
     def _train_epoch(self, epoch: int) -> Dict[str, float]:
         self.model.train()
-        total_loss = seg_loss_sum = bnd_loss_sum = 0.0
+        total_loss = seg_loss_sum = bnd_loss_sum = ewr_loss_sum = 0.0
         n = 0
 
         pbar = tqdm(self.train_loader, desc=f"Epoch {epoch+1}", leave=False)
@@ -232,29 +334,32 @@ class MAFFNetTrainer:
 
             self.optim.zero_grad(set_to_none=True)
 
-            with autocast('cuda'):
+            with autocast('cuda', dtype=torch.bfloat16):
                 preds = self.model(imgs)
-                loss, sub = self.criterion(preds, masks, epoch=epoch)
+                loss, sub = self.criterion(preds, masks, epoch=epoch, image=imgs)
+
+            if not torch.isfinite(loss):
+                raise RuntimeError(f"Non-finite loss detected at epoch {epoch}")
 
             pbar.set_postfix({"loss": float(loss.item())})
-            self.scaler.scale(loss).backward()
-            self.scaler.unscale_(self.optim)
+            loss.backward()
             nn.utils.clip_grad_norm_(
                 [p for p in self.model.parameters() if p.requires_grad], 1.0
             )
-            self.scaler.step(self.optim)
-            self.scaler.update()
+            self.optim.step()
 
             bs = imgs.size(0)
-            total_loss   += loss.item()          * bs
-            seg_loss_sum += sub["seg_loss"]      * bs
-            bnd_loss_sum += sub["boundary_loss"] * bs
+            total_loss   += loss.item()                 * bs
+            seg_loss_sum += sub["seg_loss"]             * bs
+            bnd_loss_sum += sub["boundary_loss"]        * bs
+            ewr_loss_sum += sub.get("ewr_loss", 0.0)    * bs
             n += bs
 
         return {
             "loss":          total_loss   / n,
             "seg_loss":      seg_loss_sum / n,
             "boundary_loss": bnd_loss_sum / n,
+            "ewr_loss":      ewr_loss_sum / n,
         }
 
     # ------------------------------------------------------------------
@@ -275,9 +380,9 @@ class MAFFNetTrainer:
             if masks.ndim == 3:
                 masks = masks.unsqueeze(1)
 
-            with autocast('cuda'):
+            with autocast('cuda', dtype=torch.bfloat16):
                 preds = self.model(imgs)
-                loss, _ = self.criterion(preds, masks, epoch=epoch)
+                loss, _ = self.criterion(preds, masks, epoch=epoch, image=imgs)
 
             bs = imgs.size(0)
             total_loss += loss.item() * bs
@@ -313,7 +418,7 @@ class MAFFNetTrainer:
             if masks.ndim == 3:
                 masks = masks.unsqueeze(1)
 
-            with autocast('cuda'):
+            with autocast('cuda', dtype=torch.bfloat16):
                 preds = self.model(imgs)
 
             probs   = torch.sigmoid(preds[0])
@@ -405,6 +510,7 @@ class MAFFNetTrainer:
                 f"{val_metrics['sensitivity']:.4f}",
                 f"{val_metrics['specificity']:.4f}",
                 f"{val_metrics['f1']:.4f}",
+                f"{train_stats.get('ewr_loss', 0.0):.4f}",
             ])
 
             # Save every epoch
@@ -481,7 +587,7 @@ class MAFFNetTrainer:
             if masks.ndim == 3:
                 masks = masks.unsqueeze(1)
 
-            with autocast('cuda'):
+            with autocast('cuda', dtype=torch.bfloat16):
                 preds = self.model(imgs)
 
             bs = imgs.size(0)

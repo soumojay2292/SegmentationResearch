@@ -1,0 +1,42 @@
+{
+  "model": "attention_unet",
+  "dataset": "ISIC_2018",
+  "best_epoch": 4,
+  "epochs_run": 5,
+  "early_stopped": true,
+  "best_val_loss": 0.905466,
+  "val": {
+    "acc": 0.855548,
+    "dice": 0.669098,
+    "mIoU": 0.548616,
+    "sensitivity": 0.798262,
+    "specificity": 0.880986,
+    "f1": 0.669098
+  },
+  "test_loss": 0.851045,
+  "test": {
+    "acc": 0.862142,
+    "dice": 0.679903,
+    "mIoU": 0.568106,
+    "sensitivity": 0.804085,
+    "specificity": 0.88431,
+    "f1": 0.679903
+  },
+  "config": {
+    "model": "attention_unet",
+    "dataset": "ISIC_2018",
+    "data_root": "dataset_split",
+    "epochs": 5,
+    "patience": 5,
+    "batch_size": 2,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "img_size": 384,
+    "fast": false,
+    "workers": 2,
+    "checkpoint": null,
+    "resume": null,
+    "save_dir": "experiments/attention_unet_smoke_ISIC2018/checkpoints",
+    "exp": "attention_unet_smoke_ISIC2018"
+  }
+}

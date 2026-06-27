@@ -1,0 +1,7 @@
+model:      maffnet
+backbone:   SAM2 Hiera-Large
+dataset:    ISIC_2016
+epochs:     5
+batch_size: 2
+img_size:   384
+lr:         0.001

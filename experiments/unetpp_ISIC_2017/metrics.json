@@ -1,0 +1,42 @@
+{
+  "model": "unetpp",
+  "dataset": "ISIC_2017",
+  "best_epoch": 33,
+  "epochs_run": 40,
+  "early_stopped": true,
+  "best_val_loss": 0.734313,
+  "val": {
+    "acc": 0.911079,
+    "dice": 0.732262,
+    "mIoU": 0.621474,
+    "sensitivity": 0.738758,
+    "specificity": 0.959617,
+    "f1": 0.732262
+  },
+  "test_loss": 0.63291,
+  "test": {
+    "acc": 0.929106,
+    "dice": 0.788443,
+    "mIoU": 0.695906,
+    "sensitivity": 0.777561,
+    "specificity": 0.97838,
+    "f1": 0.788443
+  },
+  "config": {
+    "model": "unetpp",
+    "dataset": "ISIC_2017",
+    "data_root": "dataset_split",
+    "epochs": 40,
+    "patience": 10,
+    "batch_size": 2,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "img_size": 384,
+    "fast": false,
+    "workers": 2,
+    "checkpoint": null,
+    "resume": null,
+    "save_dir": "experiments/unetpp_ISIC_2017/checkpoints",
+    "exp": "unetpp_ISIC_2017"
+  }
+}

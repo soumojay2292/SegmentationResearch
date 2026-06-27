@@ -7,7 +7,9 @@ AMP    : GradScaler + autocast (mirrors MAFFNetTrainer)
 Logging: same CSV columns as MAFFNetTrainer (boundary_loss always 0.0)
 """
 
+import copy
 import csv
+import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -66,12 +68,16 @@ class SimpleTrainer:
         lr:           float = 1e-3,
         weight_decay: float = 0.01,
         device:       Optional[torch.device] = None,
+        patience:     Optional[int] = None,
+        test_loader:  Optional[DataLoader] = None,
     ):
         self.model        = model
         self.train_loader = train_loader
         self.val_loader   = val_loader
+        self.test_loader  = test_loader
         self.model_name   = model_name
         self.num_epochs   = num_epochs
+        self.patience     = patience          # None -> early stopping disabled
         self.save_dir     = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -156,14 +162,17 @@ class SimpleTrainer:
     # Validation
     # ------------------------------------------------------------------
 
-    @torch.no_grad()
     def _val_epoch(self) -> Tuple[float, Dict[str, float]]:
+        return self._eval_loader(self.val_loader)
+
+    @torch.no_grad()
+    def _eval_loader(self, loader: DataLoader) -> Tuple[float, Dict[str, float]]:
         self.model.eval()
         total_loss  = 0.0
         metric_sums = {k: 0.0 for k in ("acc", "dice", "mIoU", "sensitivity", "specificity", "f1")}
         n = 0
 
-        for imgs, masks in self.val_loader:
+        for imgs, masks in loader:
             imgs  = imgs.to(self.device)
             masks = masks.to(self.device).float()
             if masks.ndim == 3:
@@ -265,6 +274,13 @@ class SimpleTrainer:
         last_val_metrics: Dict[str, float] = {}
         last_val_loss = 0.0
 
+        # Early-stopping / best-checkpoint bookkeeping (monitor val dice, maximise)
+        best_val_metrics: Dict[str, float] = {}
+        best_val_loss   = 0.0
+        best_epoch      = 0
+        best_state      = None
+        epochs_no_improve = 0
+
         for epoch in tqdm(range(self.num_epochs), desc="Epochs"):
             t0 = time.time()
 
@@ -313,11 +329,31 @@ class SimpleTrainer:
             torch.save(ckpt, self.save_dir / f"model_epoch_{epoch + 1}.pth")
 
             if dice > self.best_dice:
-                self.best_dice = dice
+                self.best_dice    = dice
+                best_epoch        = epoch + 1
+                best_val_metrics  = val_metrics
+                best_val_loss     = val_loss
+                best_state        = copy.deepcopy(self.model.state_dict())
+                epochs_no_improve = 0
                 torch.save(ckpt, self.save_dir / f"best_{self.model_name}.pth")
                 tqdm.write(f"  ↑ New best dice={dice:.4f} → best_{self.model_name}.pth")
+            else:
+                epochs_no_improve += 1
 
-        print(f"\nTraining complete. Best val dice: {self.best_dice:.4f}")
+            # Early stopping (monitor val dice, patience epochs without improvement)
+            if self.patience is not None and epochs_no_improve >= self.patience:
+                tqdm.write(
+                    f"  ⏹ Early stopping at epoch {epoch+1} "
+                    f"(no val-dice improvement for {self.patience} epochs; "
+                    f"best={self.best_dice:.4f} @ epoch {best_epoch})"
+                )
+                break
+
+        # Restore best weights so samples / test / report use the best model
+        if best_state is not None:
+            self.model.load_state_dict(best_state)
+
+        print(f"\nTraining complete. Best val dice: {self.best_dice:.4f} (epoch {best_epoch})")
 
         image_dir    = self._save_samples(run_dir)
         summary_path = self._save_summary(run_dir, config, last_val_metrics, last_val_loss)
@@ -338,6 +374,42 @@ class SimpleTrainer:
             str(image_dir),
             report_config,
         )
+
+        # ── Best-model evaluation on held-out test split (if provided) ──
+        # Weights already restored to best above.
+        if not best_val_metrics:           # never improved -> fall back to last
+            best_val_metrics, best_val_loss_ = last_val_metrics, last_val_loss
+        else:
+            best_val_loss_ = best_val_loss
+
+        test_loss, test_metrics = (None, {})
+        if self.test_loader is not None:
+            test_loss, test_metrics = self._eval_loader(self.test_loader)
+            print(
+                f"[test] dice={test_metrics['dice']:.4f} "
+                f"mIoU={test_metrics['mIoU']:.4f} loss={test_loss:.4f}"
+            )
+
+        # ── Metrics JSON export ──
+        metrics_out = {
+            "model":         self.model_name,
+            "dataset":       config.get("dataset", "—"),
+            "best_epoch":    best_epoch,
+            "epochs_run":    config.get("epochs", self.num_epochs),
+            "early_stopped": (self.patience is not None
+                              and best_epoch != 0
+                              and best_epoch < self.num_epochs),
+            "best_val_loss": round(float(best_val_loss_), 6),
+            "val": {k: round(float(v), 6) for k, v in best_val_metrics.items()},
+            "test_loss": (round(float(test_loss), 6)
+                          if test_loss is not None else None),
+            "test": {k: round(float(v), 6) for k, v in test_metrics.items()},
+            "config": config,
+        }
+        metrics_path = run_dir / "metrics.json"
+        with open(metrics_path, "w", encoding="utf-8") as jf:
+            json.dump(metrics_out, jf, indent=2)
+        print(f"[metrics] → {metrics_path}")
 
         if exp_dir is not None:
             import shutil

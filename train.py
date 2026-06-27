@@ -16,6 +16,7 @@ import numpy as np
 from tqdm import tqdm   # ✅ NEW
 
 from models.maffnet import MAFFNet
+from models.stabilized_maffnet import StabilizedMAFFNet
 from models.attention_unet import AttentionUNet
 from models.unet_plus_plus import UNetPlusPlus
 from models.unet import UNet
@@ -118,11 +119,14 @@ class SegDataset(torch.utils.data.Dataset):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="maffnet",
-                   choices=["maffnet", "attention_unet", "unetpp", "unet", "transunet"],
+                   choices=["maffnet", "stabilized_maffnet", "attention_unet", "unetpp", "unet", "transunet"],
                    help="Model architecture to train")
     p.add_argument("--dataset", default="ISIC_2018")
     p.add_argument("--data_root", default="dataset_split")
     p.add_argument("--epochs", type=int, default=5)
+    p.add_argument("--patience", type=int, default=10,
+                   help="Early-stopping patience on val dice (SimpleTrainer models). "
+                        "Set <=0 to disable.")
     p.add_argument("--batch_size", type=int, default=2)
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--weight_decay", type=float, default=0.01)
@@ -186,9 +190,29 @@ def main():
     train_loader = make_loader("train", True)
     val_loader   = make_loader("val", False)
 
+    # Held-out test split (best model evaluated on it; metrics go to metrics.json)
+    test_csv   = root / "test.csv"
+    test_loader = make_loader("test", False) if test_csv.is_file() else None
+    if test_loader is None:
+        print(f"[warn] no test.csv at {test_csv} — skipping test evaluation")
+
+    patience = args.patience if args.patience and args.patience > 0 else None
+
     if args.model == "maffnet":
         print("Building MAFFNet with SAM2 Hiera-Large backbone …")
         model   = MAFFNet(checkpoint=args.checkpoint)
+        trainer = MAFFNetTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "stabilized_maffnet":
+        print("Building Stabilized MAFFNet (SAM2 + frequency branch + gated fusion) …")
+        model   = StabilizedMAFFNet(checkpoint=args.checkpoint)
         trainer = MAFFNetTrainer(
             model=model,
             train_loader=train_loader,
@@ -210,6 +234,8 @@ def main():
             num_epochs=args.epochs,
             lr=args.lr,
             weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
         )
     elif args.model == "unetpp":
         print("Building UNet++ …")
@@ -223,6 +249,8 @@ def main():
             num_epochs=args.epochs,
             lr=args.lr,
             weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
         )
     elif args.model == "unet":
         print("Building U-Net …")
@@ -236,6 +264,8 @@ def main():
             num_epochs=args.epochs,
             lr=args.lr,
             weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
         )
     elif args.model == "transunet":
         print("Building TransUNet …")
@@ -249,6 +279,8 @@ def main():
             num_epochs=args.epochs,
             lr=args.lr,
             weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
         )
     else:
         raise ValueError(f"Unknown model: {args.model}")

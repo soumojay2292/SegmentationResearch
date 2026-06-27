@@ -1,0 +1,54 @@
+% Ablation Study Tables (LaTeX, IEEE / booktabs)
+% Requires: \usepackage{booktabs}
+%
+% STATUS: STRUCTURE ONLY -- no ablation experiments run. All cells are
+% placeholders (--). No values invented.
+
+\begin{table}[t]
+\centering
+\caption{Component ablation of Stabilized MAFFNet (test set, mean $\pm$ std).
+Cumulative addition of the synopsis modules. Values to be filled after runs.}
+\label{tab:ablation_components}
+\begin{tabular}{llccccccc}
+\toprule
+\# & Configuration & Freq. & Align & Gate & Dice & IoU & Sen & Spe \\
+\midrule
+B  & Base (SAM2+dec)      & \ding{55} & \ding{55} & \ding{55} & -- & -- & -- & -- \\
+B1 & + Frequency Branch   & \ding{51} & \ding{55} & \ding{55} & -- & -- & -- & -- \\
+B2 & + Feature Alignment  & \ding{51} & \ding{51} & \ding{55} & -- & -- & -- & -- \\
+F  & Full (+ Gated Fusion)& \ding{51} & \ding{51} & \ding{51} & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{High-pass cutoff sensitivity on ISIC 2016 (test). Values to be filled.}
+\label{tab:ablation_cutoff}
+\begin{tabular}{lcccc}
+\toprule
+cutoff & 0.05 & 0.10 & 0.20 & 0.30 \\
+\midrule
+Dice & -- & -- & -- & -- \\
+IoU  & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Boundary-supervision ablation (optional; if the BcDS direction is
+reported). A: base; B: +BDS; C: +EWR; D: full. Values to be filled.}
+\label{tab:ablation_bcds}
+\begin{tabular}{lcccccc}
+\toprule
+Variant & BDS & EWR & Dice & IoU & Sen & Spe \\
+\midrule
+A -- base       & \ding{55} & \ding{55} & -- & -- & -- & -- \\
+B -- + BDS      & \ding{51} & \ding{55} & -- & -- & -- & -- \\
+C -- + EWR      & \ding{55} & \ding{51} & -- & -- & -- & -- \\
+D -- full (BcDS)& \ding{51} & \ding{51} & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+% Note: \ding{51}/\ding{55} require \usepackage{pifont}; or replace with \checkmark / \texttimes.

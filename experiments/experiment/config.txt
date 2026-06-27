@@ -1,0 +1,6 @@
+model:      stabilized_maffnet
+dataset:    ISIC_2016
+epochs:     1
+batch_size: 2
+img_size:   384
+lr:         0.001

@@ -1,0 +1,68 @@
+% Performance Comparison Tables (LaTeX, IEEE / booktabs)
+% Requires: \usepackage{booktabs}
+%
+% DATA PROVENANCE:
+%  - Baseline rows (U-Net, Attention U-Net, UNet++, TransUNet): actual test-set
+%    results from experiments/*/metrics.json (single run; no multi-seed).
+%  - "Stabilized MAFFNet (ours)" (dagger): actual final metrics from
+%    experiments/stabilized_maffnet_ISIC*/summary.csv (single run, 40 epochs).
+%  - DAGGER: proposed values are VALIDATION-set metrics; baselines are TEST-set,
+%    so the proposed row is NOT directly comparable and is NOT bolded. A test-set
+%    evaluation of the proposed model is pending.
+%  - Attention U-Net / ISIC 2018: incomplete (no metrics.json) -> (--).
+%  - Bold = best TEST-set baseline per column.
+
+\begin{table}[t]
+\centering
+\caption{Segmentation performance on ISIC 2016. Bold = best test-set baseline per
+column. $\dagger$: proposed values are validation-set metrics (test evaluation pending).}
+\label{tab:isic2016}
+\begin{tabular}{lcccc}
+\toprule
+Method & Dice & IoU & Sen & Spe \\
+\midrule
+U-Net           & 0.7874 & 0.6808 & 0.7649 & 0.9609 \\
+Attention U-Net & \textbf{0.8466} & \textbf{0.7443} & \textbf{0.8780} & 0.9495 \\
+UNet++          & 0.8141 & 0.7140 & 0.7996 & 0.9647 \\
+TransUNet       & 0.8365 & 0.7349 & 0.8077 & \textbf{0.9700} \\
+Stabilized MAFFNet (ours)$^{\dagger}$ & 0.9316 & 0.8746 & 0.9269 & 0.9803 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Segmentation performance on ISIC 2017. Bold = best test-set baseline per
+column. $\dagger$: proposed values are validation-set metrics (test evaluation pending).}
+\label{tab:isic2017}
+\begin{tabular}{lcccc}
+\toprule
+Method & Dice & IoU & Sen & Spe \\
+\midrule
+U-Net           & 0.7613 & 0.6604 & 0.7566 & 0.9659 \\
+Attention U-Net & 0.8097 & 0.7159 & 0.8223 & 0.9737 \\
+UNet++          & 0.7884 & 0.6959 & 0.7776 & 0.9784 \\
+TransUNet       & \textbf{0.8683} & \textbf{0.7843} & \textbf{0.8418} & \textbf{0.9870} \\
+Stabilized MAFFNet (ours)$^{\dagger}$ & 0.9101 & 0.8426 & 0.9193 & 0.9815 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Segmentation performance on ISIC 2018. Bold = best test-set baseline per
+column. Attention U-Net incomplete (--). $\dagger$: proposed values are
+validation-set metrics (test evaluation pending).}
+\label{tab:isic2018}
+\begin{tabular}{lcccc}
+\toprule
+Method & Dice & IoU & Sen & Spe \\
+\midrule
+U-Net           & 0.6866 & 0.5714 & 0.7766 & 0.8948 \\
+Attention U-Net & -- & -- & -- & -- \\
+UNet++          & 0.6978 & 0.5878 & 0.7692 & 0.9298 \\
+TransUNet       & \textbf{0.8259} & \textbf{0.7265} & \textbf{0.8929} & \textbf{0.9315} \\
+Stabilized MAFFNet (ours)$^{\dagger}$ & 0.8688 & 0.7926 & 0.8491 & 0.9861 \\
+\bottomrule
+\end{tabular}
+\end{table}
