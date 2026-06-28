@@ -63,6 +63,9 @@ FREQ_PROJ_WIDTH: int = 80
 FUSION_WIDTH: int = 80
 FGFF_DILATIONS: Tuple[int, int, int, int] = (1, 3, 5, 7)
 
+# Frozen decoder width (Design Freeze §1.6, §5).
+DECODER_WIDTH: int = 64
+
 
 # ============================================================================
 #  1. Frozen SAM Encoder  (Design Freeze §1.1)
@@ -437,7 +440,56 @@ class FGFF(nn.Module):
 
 
 # ============================================================================
-#  Model (Milestones 1 + 2A + 2B)
+#  Milestone 3 — EDB Decoder + Skip Connections  (Design Freeze §1.6, §5)
+# ============================================================================
+
+class DoubleConv(nn.Module):
+    """Two consecutive Conv3x3 -> BatchNorm -> ReLU blocks (Design Freeze §5)."""
+
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.block(x)
+
+
+class EDB(nn.Module):
+    """Enhanced Decoder Block (Design Freeze §1.6, §5 / Eqs. 10-11).
+
+        x_up   = bilinear-upsample(x_high) to skip resolution
+        x_cat  = Concat(x_up, x_skip)
+        x      = DoubleConv(x_cat) -> out width 64
+        attn   = sigma(Conv7x7([avg_c(x); max_c(x)]))        # spatial, 1xHxW
+        D      = x + gamma * (attn * x)                       # residual, gamma init 0
+    """
+
+    def __init__(self, high_channels: int, skip_channels: int,
+                 out_channels: int = DECODER_WIDTH):
+        super().__init__()
+        self.double_conv = DoubleConv(high_channels + skip_channels, out_channels)
+        self.attn_conv = nn.Conv2d(2, 1, kernel_size=7, padding=3)
+        self.gamma = nn.Parameter(torch.zeros(1))
+
+    def forward(self, x_high: torch.Tensor, x_skip: torch.Tensor) -> torch.Tensor:
+        x_up = F.interpolate(x_high, size=x_skip.shape[-2:], mode="bilinear",
+                             align_corners=False)
+        x = self.double_conv(torch.cat([x_up, x_skip], dim=1))
+        avg = x.mean(dim=1, keepdim=True)
+        mx = x.max(dim=1, keepdim=True).values
+        attn = torch.sigmoid(self.attn_conv(torch.cat([avg, mx], dim=1)))
+        return x + self.gamma * (attn * x)
+
+
+# ============================================================================
+#  Model (Milestones 1 + 2A + 2B + 3)
 # ============================================================================
 
 class MAFFNetOriginalReconstructed(nn.Module):
@@ -449,8 +501,8 @@ class MAFFNetOriginalReconstructed(nn.Module):
 
     forward returns a dict with ``encoder_features``, ``mmpa_features``,
     ``projected_features`` (M1, unchanged), ``frequency_features`` and
-    ``frequency_projected`` (M2A, unchanged), plus ``fgff_features`` (M2B).
-    No decoder / segmentation / loss yet.
+    ``frequency_projected`` (M2A, unchanged), ``fgff_features`` (M2B, unchanged),
+    plus ``decoder_features`` (M3). No segmentation / deep supervision / loss yet.
     """
 
     def __init__(self, sam_checkpoint: Optional[str] = None):
@@ -462,8 +514,13 @@ class MAFFNetOriginalReconstructed(nn.Module):
         # --- Milestone 2A (verified, unchanged) ---
         self.freq_encoder = FrequencyEncoder()
         self.freq_proj = FrequencyProjection()
-        # --- Milestone 2B ---
+        # --- Milestone 2B (verified, unchanged) ---
         self.fgff = nn.ModuleList([FGFF() for _ in ENC_CHANNELS])
+        # --- Milestone 3: EDB decoder (deepest -> finest) ---
+        # g4(80,12²) ⊕ g3(80,24²) -> 64 ; -> ⊕ g2(80,48²) -> 64 ; -> ⊕ g1(80,96²) -> 64
+        self.edb3 = EDB(FUSION_WIDTH, FUSION_WIDTH, DECODER_WIDTH)
+        self.edb2 = EDB(DECODER_WIDTH, FUSION_WIDTH, DECODER_WIDTH)
+        self.edb1 = EDB(DECODER_WIDTH, FUSION_WIDTH, DECODER_WIDTH)
 
     def forward(self, x: torch.Tensor) -> Dict[str, List[torch.Tensor]]:
         # Spatial stream (Milestone 1).
@@ -475,6 +532,14 @@ class MAFFNetOriginalReconstructed(nn.Module):
         freq_proj = self.freq_proj(freq)
         # Frequency-guided fusion (Milestone 2B).
         fgff = [self.fgff[i](proj[i], freq_proj[i]) for i in range(len(proj))]
+
+        # EDB decoder (Milestone 3): g[0..3] = G1..G4 (finest..coarsest).
+        d4 = fgff[3]                      # bottleneck feature (80, 12²)
+        d3 = self.edb3(fgff[3], fgff[2])  # 64, 24²
+        d2 = self.edb2(d3, fgff[1])       # 64, 48²
+        d1 = self.edb1(d2, fgff[0])       # 64, 96²
+        decoder = [d1, d2, d3, d4]        # D1..D4 (finest..coarsest)
+
         return {
             "encoder_features": enc,
             "mmpa_features": mm,
@@ -482,6 +547,7 @@ class MAFFNetOriginalReconstructed(nn.Module):
             "frequency_features": freq,
             "frequency_projected": freq_proj,
             "fgff_features": fgff,
+            "decoder_features": decoder,
         }
 
 
@@ -504,6 +570,9 @@ if __name__ == "__main__":
     n_fproj = sum(p.numel() for p in model.freq_proj.parameters()
                   if p.requires_grad)
     n_fgff = sum(p.numel() for p in model.fgff.parameters() if p.requires_grad)
+    n_edb = sum(p.numel() for p in
+                list(model.edb3.parameters()) + list(model.edb2.parameters())
+                + list(model.edb1.parameters()) if p.requires_grad)
     print(f"Total params:     {n_total/1e6:.4f} M")
     print(f"Trainable params: {n_train/1e6:.4f} M")
     print(f"  - MMPA x4:           {n_mmpa/1e6:.4f} M")
@@ -511,6 +580,7 @@ if __name__ == "__main__":
     print(f"  - Frequency encoder: {n_freq/1e6:.4f} M")
     print(f"  - Frequency proj x4: {n_fproj/1e6:.4f} M")
     print(f"  - FGFF x4:           {n_fgff/1e6:.4f} M")
+    print(f"  - EDB decoder x3:    {n_edb/1e6:.4f} M")
 
     x = torch.randn(2, 3, 384, 384)
     out = model(x)
@@ -540,6 +610,12 @@ if __name__ == "__main__":
     for i, f in enumerate(out["fgff_features"]):
         print(f"  G{i+1}: {tuple(f.shape)}  (expect B,80,"
               f"{expected_res[i]},{expected_res[i]})")
+    # D1..D4 = finest..coarsest; D4 is the 80-ch bottleneck, D1..D3 are 64-ch.
+    dec_expect = [(64, 96), (64, 48), (64, 24), (80, 12)]
+    print("decoder_features:")
+    for i, f in enumerate(out["decoder_features"]):
+        c, r = dec_expect[i]
+        print(f"  D{i+1}: {tuple(f.shape)}  (expect B,{c},{r},{r})")
 
     # Assertions against the Design Freeze.
     ok = True
@@ -556,5 +632,8 @@ if __name__ == "__main__":
         if tuple(out["frequency_projected"][i].shape) != (2, 80, r, r):
             ok = False
         if tuple(out["fgff_features"][i].shape) != (2, 80, r, r):
+            ok = False
+        dc, dr = dec_expect[i]
+        if tuple(out["decoder_features"][i].shape) != (2, dc, dr, dr):
             ok = False
     print(f"\nShape compliance with Design Freeze: {'PASS' if ok else 'FAIL'}")
