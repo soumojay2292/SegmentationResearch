@@ -59,6 +59,10 @@ FREQ_FFN_RATIO: int = 2
 FREQ_DOWNSAMPLE: float = 0.25          # interp factor 384 -> 96
 FREQ_PROJ_WIDTH: int = 80
 
+# Frozen FGFF widths (Design Freeze §1.5).
+FUSION_WIDTH: int = 80
+FGFF_DILATIONS: Tuple[int, int, int, int] = (1, 3, 5, 7)
+
 
 # ============================================================================
 #  1. Frozen SAM Encoder  (Design Freeze §1.1)
@@ -374,7 +378,66 @@ class FrequencyProjection(nn.Module):
 
 
 # ============================================================================
-#  Model (Milestones 1 + 2A)
+#  Milestone 2B — FGFF (Frequency-Guided Feature Fusion)  (Design Freeze §1.5)
+# ============================================================================
+
+class FGFF(nn.Module):
+    """Frequency-Guided Feature Fusion (Design Freeze §1.5 / Eq. 9), width 80.
+
+    Spatial branch (multi-scale dilated convolutions on Ps):
+        b_i              = DilConv3x3(Conv1x1(Ps), dilation=d_i),  d_i in {1,3,5,7}
+        f_spatial_fused  = Conv3x3(Cat[b0,b1,b2,b3])
+    Frequency branch (attention from Pf):
+        f_freq_attn      = sigma(Conv3x3([AvgPool_c(Pf); MaxPool_c(Pf)]))
+    Fusion (beta scaling + residual addition, Milestone 2B requirement):
+        G                = f_spatial_fused + beta * (f_freq_attn * f_spatial_fused)
+
+    `beta in R^80` is a learnable per-channel weight on the frequency-guided
+    increment. (Eq. 9 states the pure gate `beta*(attn*spatial)`; this milestone
+    adds it residually so the spatial pathway is preserved.) Output width 80.
+    """
+
+    def __init__(self, width: int = FUSION_WIDTH,
+                 dilations: Tuple[int, ...] = FGFF_DILATIONS):
+        super().__init__()
+        # Spatial branch: four dilation branches (1x1 then dilated 3x3).
+        self.branch_1x1 = nn.ModuleList([
+            nn.Conv2d(width, width, kernel_size=1) for _ in dilations
+        ])
+        self.branch_dil = nn.ModuleList([
+            nn.Conv2d(width, width, kernel_size=3, padding=d, dilation=d)
+            for d in dilations
+        ])
+        # Channel fusion of the concatenated branches.
+        self.spatial_fuse = nn.Conv2d(width * len(dilations), width,
+                                      kernel_size=3, padding=1)
+        # Frequency attention from channel-wise avg/max pooling -> 1xHxW.
+        self.freq_attn = nn.Conv2d(2, 1, kernel_size=3, padding=1)
+        # Learnable per-channel beta on the frequency-guided increment.
+        self.beta = nn.Parameter(torch.ones(width))
+
+    def forward(self, ps: torch.Tensor, pf: torch.Tensor) -> torch.Tensor:
+        if pf.shape[-2:] != ps.shape[-2:]:
+            pf = F.interpolate(pf, size=ps.shape[-2:], mode="bilinear",
+                               align_corners=False)
+
+        # Spatial branch: multi-scale dilated convolutions + concat + fuse.
+        branches = [dil(c1(ps))
+                    for c1, dil in zip(self.branch_1x1, self.branch_dil)]
+        spatial_fused = self.spatial_fuse(torch.cat(branches, dim=1))
+
+        # Frequency branch: channel-pooled attention map.
+        avg = pf.mean(dim=1, keepdim=True)
+        mx = pf.max(dim=1, keepdim=True).values
+        freq_attn = torch.sigmoid(self.freq_attn(torch.cat([avg, mx], dim=1)))
+
+        # Beta scaling + residual fusion.
+        gated = self.beta.view(1, -1, 1, 1) * (freq_attn * spatial_fused)
+        return spatial_fused + gated
+
+
+# ============================================================================
+#  Model (Milestones 1 + 2A + 2B)
 # ============================================================================
 
 class MAFFNetOriginalReconstructed(nn.Module):
@@ -385,8 +448,9 @@ class MAFFNetOriginalReconstructed(nn.Module):
     projection.
 
     forward returns a dict with ``encoder_features``, ``mmpa_features``,
-    ``projected_features`` (M1, unchanged) plus ``frequency_features`` and
-    ``frequency_projected`` (M2A). No FGFF / decoder / segmentation / loss yet.
+    ``projected_features`` (M1, unchanged), ``frequency_features`` and
+    ``frequency_projected`` (M2A, unchanged), plus ``fgff_features`` (M2B).
+    No decoder / segmentation / loss yet.
     """
 
     def __init__(self, sam_checkpoint: Optional[str] = None):
@@ -395,9 +459,11 @@ class MAFFNetOriginalReconstructed(nn.Module):
         self.encoder = FrozenSAMEncoder(checkpoint=sam_checkpoint)
         self.mmpa = nn.ModuleList([MMPA(c) for c in ENC_CHANNELS])
         self.spatial_proj = SpatialProjection(ENC_CHANNELS, SPATIAL_PROJ_WIDTH)
-        # --- Milestone 2A ---
+        # --- Milestone 2A (verified, unchanged) ---
         self.freq_encoder = FrequencyEncoder()
         self.freq_proj = FrequencyProjection()
+        # --- Milestone 2B ---
+        self.fgff = nn.ModuleList([FGFF() for _ in ENC_CHANNELS])
 
     def forward(self, x: torch.Tensor) -> Dict[str, List[torch.Tensor]]:
         # Spatial stream (Milestone 1).
@@ -407,12 +473,15 @@ class MAFFNetOriginalReconstructed(nn.Module):
         # Frequency stream (Milestone 2A).
         freq = self.freq_encoder(x)
         freq_proj = self.freq_proj(freq)
+        # Frequency-guided fusion (Milestone 2B).
+        fgff = [self.fgff[i](proj[i], freq_proj[i]) for i in range(len(proj))]
         return {
             "encoder_features": enc,
             "mmpa_features": mm,
             "projected_features": proj,
             "frequency_features": freq,
             "frequency_projected": freq_proj,
+            "fgff_features": fgff,
         }
 
 
@@ -434,12 +503,14 @@ if __name__ == "__main__":
                  if p.requires_grad)
     n_fproj = sum(p.numel() for p in model.freq_proj.parameters()
                   if p.requires_grad)
+    n_fgff = sum(p.numel() for p in model.fgff.parameters() if p.requires_grad)
     print(f"Total params:     {n_total/1e6:.4f} M")
     print(f"Trainable params: {n_train/1e6:.4f} M")
     print(f"  - MMPA x4:           {n_mmpa/1e6:.4f} M")
     print(f"  - Spatial proj x4:   {n_sproj/1e6:.4f} M")
     print(f"  - Frequency encoder: {n_freq/1e6:.4f} M")
     print(f"  - Frequency proj x4: {n_fproj/1e6:.4f} M")
+    print(f"  - FGFF x4:           {n_fgff/1e6:.4f} M")
 
     x = torch.randn(2, 3, 384, 384)
     out = model(x)
@@ -465,6 +536,10 @@ if __name__ == "__main__":
     for i, f in enumerate(out["frequency_projected"]):
         print(f"  Pf{i+1}: {tuple(f.shape)}  (expect B,80,"
               f"{expected_res[i]},{expected_res[i]})")
+    print("fgff_features:")
+    for i, f in enumerate(out["fgff_features"]):
+        print(f"  G{i+1}: {tuple(f.shape)}  (expect B,80,"
+              f"{expected_res[i]},{expected_res[i]})")
 
     # Assertions against the Design Freeze.
     ok = True
@@ -479,5 +554,7 @@ if __name__ == "__main__":
         if tuple(out["frequency_features"][i].shape) != (2, 128, r, r):
             ok = False
         if tuple(out["frequency_projected"][i].shape) != (2, 80, r, r):
+            ok = False
+        if tuple(out["fgff_features"][i].shape) != (2, 80, r, r):
             ok = False
     print(f"\nShape compliance with Design Freeze: {'PASS' if ok else 'FAIL'}")
