@@ -489,7 +489,86 @@ class EDB(nn.Module):
 
 
 # ============================================================================
-#  Model (Milestones 1 + 2A + 2B + 3)
+#  Milestone 4B — RDB (Reconstruction Decoder Branch)
+#  (RDB_DESIGN_SPECIFICATION.md / Design Freeze §1.7 / Eq. 12)
+# ============================================================================
+
+class RDB(nn.Module):
+    """Reconstruction Decoder Branch (Eq. 12, RDB spec §7).
+
+    Consumes the four encoding-stage (post-MMPA) spatial features at native
+    widths, deepest -> shallowest: 1152@12, 576@24, 288@48, 144@96. Each stage:
+        s_up   = ConvTranspose2d(C->C, k4,s2,p1, groups=C)     # depthwise, x2
+        s_cat  = Concat(s_up, s_skip)
+        w      = ReLU(Conv3x3((C + C_skip) -> C//2))
+    Final: ConvTranspose2d(144 -> 3, k4,s2,p1) then interpolate to input size.
+    Output: reconstruction B x 3 x 384 x 384. No normalization (Conv + ReLU only).
+    """
+
+    def __init__(self, channels: Tuple[int, int, int, int] = ENC_CHANNELS):
+        super().__init__()
+        deep_to_shallow = list(reversed(channels))          # [1152, 576, 288, 144]
+        self.up_convs = nn.ModuleList()
+        self.fuse_convs = nn.ModuleList()
+        cur = deep_to_shallow[0]
+        for idx, nxt in enumerate(deep_to_shallow[1:]):
+            self.up_convs.append(
+                nn.ConvTranspose2d(cur, cur, kernel_size=4, stride=2,
+                                   padding=1, groups=cur)     # depthwise x2
+            )
+            # Candidate C5 (RDB_PARAMETER_ANALYSIS.md): grouped fuse on the
+            # deepest stage only (idx 0, Conv3x3 1728->576), groups=2; all other
+            # stages keep groups=1. Reduces the 76%-dominant layer; shapes,
+            # widths, topology and pipeline are unchanged.
+            fuse_groups = 2 if idx == 0 else 1
+            self.fuse_convs.append(
+                nn.Sequential(
+                    nn.Conv2d(cur + nxt, cur // 2, kernel_size=3, padding=1,
+                              groups=fuse_groups),
+                    nn.ReLU(inplace=True),
+                )
+            )
+            cur = nxt                                         # cur//2 == nxt here
+        self.to_rgb = nn.ConvTranspose2d(cur, 3, kernel_size=4, stride=2,
+                                         padding=1)
+
+    def forward(self, feats: List[torch.Tensor],
+                size: Tuple[int, int]) -> torch.Tensor:
+        s = list(reversed(feats))                            # deep -> shallow
+        x = s[0]
+        for up, fuse, skip in zip(self.up_convs, self.fuse_convs, s[1:]):
+            x = up(x)
+            if x.shape[-2:] != skip.shape[-2:]:
+                x = F.interpolate(x, size=skip.shape[-2:], mode="bilinear",
+                                  align_corners=False)
+            x = fuse(torch.cat([x, skip], dim=1))
+        x = self.to_rgb(x)
+        return F.interpolate(x, size=size, mode="bilinear", align_corners=False)
+
+
+# ============================================================================
+#  Milestone 5 — Deep Supervision Segmentation Heads  (Design Freeze §1.8, §1.9)
+# ============================================================================
+
+class SegHead(nn.Module):
+    """Deep-supervision segmentation head (Design Freeze §1.9):
+    `Conv1x1(in_channels -> 1)` then bilinear-upsample to the target size.
+    Returns raw logits (no activation; the loss applies sigmoid later)."""
+
+    def __init__(self, in_channels: int, num_classes: int = 1):
+        super().__init__()
+        self.head = nn.Conv2d(in_channels, num_classes, kernel_size=1)
+
+    def forward(self, x: torch.Tensor, size: Tuple[int, int]) -> torch.Tensor:
+        out = self.head(x)
+        if out.shape[-2:] != size:
+            out = F.interpolate(out, size=size, mode="bilinear",
+                                align_corners=False)
+        return out
+
+
+# ============================================================================
+#  Model (Milestones 1 + 2A + 2B + 3 + 4B + 5)
 # ============================================================================
 
 class MAFFNetOriginalReconstructed(nn.Module):
@@ -502,7 +581,8 @@ class MAFFNetOriginalReconstructed(nn.Module):
     forward returns a dict with ``encoder_features``, ``mmpa_features``,
     ``projected_features`` (M1, unchanged), ``frequency_features`` and
     ``frequency_projected`` (M2A, unchanged), ``fgff_features`` (M2B, unchanged),
-    plus ``decoder_features`` (M3). No segmentation / deep supervision / loss yet.
+    ``decoder_features`` (M3, unchanged), ``reconstruction`` (M4B, unchanged),
+    plus ``segmentation_logits`` (M5). No loss yet.
     """
 
     def __init__(self, sam_checkpoint: Optional[str] = None):
@@ -521,8 +601,44 @@ class MAFFNetOriginalReconstructed(nn.Module):
         self.edb3 = EDB(FUSION_WIDTH, FUSION_WIDTH, DECODER_WIDTH)
         self.edb2 = EDB(DECODER_WIDTH, FUSION_WIDTH, DECODER_WIDTH)
         self.edb1 = EDB(DECODER_WIDTH, FUSION_WIDTH, DECODER_WIDTH)
+        # --- Milestone 4B/4C: RDB (reconstruction branch) ---
+        self.rdb = RDB(ENC_CHANNELS)
+        # --- Milestone 5: deep-supervision seg heads ---
+        # p1<-D1(64), p2<-D2(64), p3<-D3(64), p4<-D4(80, bottleneck g4).
+        self.head1 = SegHead(DECODER_WIDTH)   # D1, 64
+        self.head2 = SegHead(DECODER_WIDTH)   # D2, 64
+        self.head3 = SegHead(DECODER_WIDTH)   # D3, 64
+        self.head4 = SegHead(FUSION_WIDTH)    # D4, 80
+        # --- Milestone 6: loss weights (deep-supervision + reconstruction) ---
+        self.ds_weights = (1.0, 1.0, 1.0, 0.01)   # p1, p2, p3, p4
+        self.lambda_rec = 0.01                     # MSE(rec, x) weight
 
-    def forward(self, x: torch.Tensor) -> Dict[str, List[torch.Tensor]]:
+    @staticmethod
+    def dice_loss(logit: torch.Tensor, target: torch.Tensor,
+                  eps: float = 1e-6) -> torch.Tensor:
+        """Dice loss on a single prediction (sigmoid applied to logits)."""
+        prob = torch.sigmoid(logit)
+        num = 2.0 * (prob * target).sum(dim=(1, 2, 3)) + eps
+        den = prob.sum(dim=(1, 2, 3)) + target.sum(dim=(1, 2, 3)) + eps
+        return (1.0 - num / den).mean()
+
+    def compute_losses(self, seg_logits: List[torch.Tensor],
+                       rec: torch.Tensor, image: torch.Tensor,
+                       target: torch.Tensor) -> Dict[str, torch.Tensor]:
+        """Deep-supervision Dice + reconstruction MSE (Milestone 6):
+            L = Dice(p1) + Dice(p2) + Dice(p3) + 0.01*Dice(p4) + 0.01*MSE(rec, x)
+        """
+        dices = [self.dice_loss(p, target) for p in seg_logits]
+        mse = F.mse_loss(rec, image)
+        total = sum(w * d for w, d in zip(self.ds_weights, dices)) \
+            + self.lambda_rec * mse
+        return {
+            "dice_p1": dices[0], "dice_p2": dices[1],
+            "dice_p3": dices[2], "dice_p4": dices[3],
+            "mse_rec": mse, "total": total,
+        }
+
+    def forward(self, x: torch.Tensor, target: Optional[torch.Tensor] = None):
         # Spatial stream (Milestone 1).
         enc = self.encoder(x)
         mm = [self.mmpa[i](enc[i]) for i in range(len(enc))]
@@ -540,15 +656,32 @@ class MAFFNetOriginalReconstructed(nn.Module):
         d1 = self.edb1(d2, fgff[0])       # 64, 96²
         decoder = [d1, d2, d3, d4]        # D1..D4 (finest..coarsest)
 
-        return {
-            "encoder_features": enc,
-            "mmpa_features": mm,
-            "projected_features": proj,
-            "frequency_features": freq,
-            "frequency_projected": freq_proj,
-            "fgff_features": fgff,
-            "decoder_features": decoder,
+        # RDB reconstruction (Milestone 4B): train-only (Milestone 6 gating).
+        size = (x.shape[-2], x.shape[-1])
+        rec = self.rdb(mm, size) if self.training else None   # B x 3 x 384 x 384
+
+        # Deep-supervision segmentation heads (Milestone 5): raw logits @384².
+        p1 = self.head1(d1, size)         # from D1 (64)
+        p2 = self.head2(d2, size)         # from D2 (64)
+        p3 = self.head3(d3, size)         # from D3 (64)
+        p4 = self.head4(d4, size)         # from D4 (80, bottleneck)
+        seg_logits = [p1, p2, p3, p4]
+
+        # --- Final forward behaviour (Milestone 6) ---
+        # Evaluation: return only p1 (highest-resolution prediction); RDB and the
+        # auxiliary heads are not needed at inference.
+        if not self.training:
+            return p1
+
+        # Training: segmentation logits + reconstruction (+ losses if a target
+        # mask is supplied).
+        out: Dict[str, object] = {
+            "segmentation_logits": seg_logits,
+            "reconstruction": rec,
         }
+        if target is not None:
+            out["losses"] = self.compute_losses(seg_logits, rec, x, target)
+        return out
 
 
 # ============================================================================
@@ -573,6 +706,11 @@ if __name__ == "__main__":
     n_edb = sum(p.numel() for p in
                 list(model.edb3.parameters()) + list(model.edb2.parameters())
                 + list(model.edb1.parameters()) if p.requires_grad)
+    n_rdb = sum(p.numel() for p in model.rdb.parameters() if p.requires_grad)
+    n_heads = sum(p.numel() for p in
+                  list(model.head1.parameters()) + list(model.head2.parameters())
+                  + list(model.head3.parameters()) + list(model.head4.parameters())
+                  if p.requires_grad)
     print(f"Total params:     {n_total/1e6:.4f} M")
     print(f"Trainable params: {n_train/1e6:.4f} M")
     print(f"  - MMPA x4:           {n_mmpa/1e6:.4f} M")
@@ -581,59 +719,65 @@ if __name__ == "__main__":
     print(f"  - Frequency proj x4: {n_fproj/1e6:.4f} M")
     print(f"  - FGFF x4:           {n_fgff/1e6:.4f} M")
     print(f"  - EDB decoder x3:    {n_edb/1e6:.4f} M")
+    print(f"  - RDB:               {n_rdb/1e6:.4f} M")
+    print(f"  - Seg heads x4:      {n_heads/1e6:.6f} M")
 
     x = torch.randn(2, 3, 384, 384)
-    out = model(x)
+    y = (torch.rand(2, 1, 384, 384) > 0.5).float()
 
-    expected_res = [96, 48, 24, 12]
-    print("\nencoder_features:")
-    for i, f in enumerate(out["encoder_features"]):
-        print(f"  X{i+1}: {tuple(f.shape)}  (expect B,{ENC_CHANNELS[i]},"
-              f"{expected_res[i]},{expected_res[i]})")
-    print("mmpa_features:")
-    for i, f in enumerate(out["mmpa_features"]):
-        print(f"  S{i+1}: {tuple(f.shape)}  (expect B,{ENC_CHANNELS[i]},"
-              f"{expected_res[i]},{expected_res[i]})")
-    print("projected_features:")
-    for i, f in enumerate(out["projected_features"]):
-        print(f"  Ps{i+1}: {tuple(f.shape)}  (expect B,80,"
-              f"{expected_res[i]},{expected_res[i]})")
-    print("frequency_features:")
-    for i, f in enumerate(out["frequency_features"]):
-        print(f"  F{i+1}: {tuple(f.shape)}  (expect B,128,"
-              f"{expected_res[i]},{expected_res[i]})")
-    print("frequency_projected:")
-    for i, f in enumerate(out["frequency_projected"]):
-        print(f"  Pf{i+1}: {tuple(f.shape)}  (expect B,80,"
-              f"{expected_res[i]},{expected_res[i]})")
-    print("fgff_features:")
-    for i, f in enumerate(out["fgff_features"]):
-        print(f"  G{i+1}: {tuple(f.shape)}  (expect B,80,"
-              f"{expected_res[i]},{expected_res[i]})")
-    # D1..D4 = finest..coarsest; D4 is the 80-ch bottleneck, D1..D3 are 64-ch.
-    dec_expect = [(64, 96), (64, 48), (64, 24), (80, 12)]
-    print("decoder_features:")
-    for i, f in enumerate(out["decoder_features"]):
-        c, r = dec_expect[i]
-        print(f"  D{i+1}: {tuple(f.shape)}  (expect B,{c},{r},{r})")
+    # --- Training forward (with target -> losses) ---
+    model.train()
+    out = model(x, y)
+    print("\n[train] output keys:", list(out.keys()))
+    print("[train] segmentation_logits:")
+    for i, p in enumerate(out["segmentation_logits"]):
+        print(f"  p{i+1}: {tuple(p.shape)}  (expect B,1,384,384)")
+    print(f"[train] reconstruction: {tuple(out['reconstruction'].shape)}  "
+          f"(expect B,3,384,384)")
+    L = out["losses"]
+    print("[train] losses:")
+    for k in ["dice_p1", "dice_p2", "dice_p3", "dice_p4", "mse_rec", "total"]:
+        print(f"  {k}: {L[k].item():.6f}")
 
-    # Assertions against the Design Freeze.
-    ok = True
-    for i in range(4):
-        r = expected_res[i]
-        if tuple(out["encoder_features"][i].shape) != (2, ENC_CHANNELS[i], r, r):
-            ok = False
-        if tuple(out["mmpa_features"][i].shape) != (2, ENC_CHANNELS[i], r, r):
-            ok = False
-        if tuple(out["projected_features"][i].shape) != (2, 80, r, r):
-            ok = False
-        if tuple(out["frequency_features"][i].shape) != (2, 128, r, r):
-            ok = False
-        if tuple(out["frequency_projected"][i].shape) != (2, 80, r, r):
-            ok = False
-        if tuple(out["fgff_features"][i].shape) != (2, 80, r, r):
-            ok = False
-        dc, dr = dec_expect[i]
-        if tuple(out["decoder_features"][i].shape) != (2, dc, dr, dr):
-            ok = False
-    print(f"\nShape compliance with Design Freeze: {'PASS' if ok else 'FAIL'}")
+    # Manual recomputation of the total loss to verify the formula.
+    man = (L["dice_p1"] + L["dice_p2"] + L["dice_p3"]
+           + 0.01 * L["dice_p4"] + 0.01 * L["mse_rec"]).item()
+    print(f"[loss check] manual total = {man:.6f}  | "
+          f"reported = {L['total'].item():.6f}  | "
+          f"match = {abs(man - L['total'].item()) < 1e-6}")
+
+    # --- Gradient check ---
+    model.zero_grad()
+    L["total"].backward()
+    g_fgff = model.fgff[0].beta.grad
+    g_head = model.head1.head.weight.grad
+    enc_has_grad = any(p.grad is not None for p in model.encoder.parameters())
+    finite = torch.isfinite(L["total"]).item()
+    print("\n[grad] total finite:", finite)
+    print("[grad] FGFF.beta grad finite/non-None:",
+          g_fgff is not None and torch.isfinite(g_fgff).all().item())
+    print("[grad] head1 grad finite/non-None:",
+          g_head is not None and torch.isfinite(g_head).all().item())
+    print("[grad] frozen encoder received grad:", enc_has_grad, "(expect False)")
+
+    # --- Evaluation forward (returns ONLY p1) ---
+    model.eval()
+    with torch.no_grad():
+        ev = model(x)
+    is_tensor = isinstance(ev, torch.Tensor)
+    print("\n[eval] returns single tensor:", is_tensor,
+          "| shape:", tuple(ev.shape) if is_tensor else None,
+          "(expect (2,1,384,384))")
+
+    # --- Compliance ---
+    ok = (
+        list(out.keys()) == ["segmentation_logits", "reconstruction", "losses"]
+        and all(tuple(p.shape) == (2, 1, 384, 384) for p in out["segmentation_logits"])
+        and tuple(out["reconstruction"].shape) == (2, 3, 384, 384)
+        and abs(man - L["total"].item()) < 1e-6
+        and finite
+        and (g_fgff is not None) and (g_head is not None)
+        and (not enc_has_grad)
+        and is_tensor and tuple(ev.shape) == (2, 1, 384, 384)
+    )
+    print(f"\nFinal compliance: {'PASS' if ok else 'FAIL'}")
