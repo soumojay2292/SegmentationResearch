@@ -1,0 +1,206 @@
+================================================================================
+EXPERIMENTAL PIPELINE AUDIT — Paper 2
+Lead Experimental Audit Engineer
+================================================================================
+Source of truth : repository (PRIMARY). Synopsis = secondary (intent only).
+Scope           : reconstruction + verification only. No code, no manuscript
+                  modified. Every conclusion cites code/data (file:line or path).
+                  Items not recorded in the repository are marked [NOT RECORDED].
+================================================================================
+
+
+1. DATASETS
+--------------------------------------------------------------------------------
+Datasets used  : ISIC 2016, ISIC 2017, ISIC 2018 (dermoscopy, binary lesion mask).
+Directory      : dataset_split/<DATASET>/{train,val,test}/{images,masks}
+                 + dataset_split/<DATASET>/{train,val,test}.csv (image,mask rows).
+Splits (train / val / test), verified by CSV row counts:
+   ISIC_2016 : 895 / 192 / 192
+   ISIC_2017 : 1600 / 200 / 200   (re-split; dataset_split/ISIC_2017/
+                                   original_csv_backup/ retained; ISIC2017 original
+                                   test lacked masks — see SPLIT_AUDIT.md, seed 42)
+   ISIC_2018 : 1825 / 377 / 392
+Preprocessing (SegDataset, train.py:47-112):
+   - Resize to img_size x img_size, default 384 (bilinear for image, nearest for
+     mask) — train.py:100-101.
+   - Image -> ToTensor, range [0,1] (train.py:106).
+   - Mask -> /255, binarised at 0.5 (train.py:107-111).
+Image resolution: 384 x 384 (config.txt img_size=384; train.py default 384).
+Dataset versions: ISIC 2016/2017/2018 challenge sets (arch not versioned beyond
+   folder name) — [NOT RECORDED beyond folder identity].
+STATUS: Dataset pipeline reconstructed.  PASS.
+
+
+2. TRAINING PIPELINE
+--------------------------------------------------------------------------------
+Dataloaders (train.py:179-195): SegDataset -> torch DataLoader; shuffle=True for
+   train, False for val/test; num_workers = --workers (default 2); pin_memory=True.
+Augmentation (train split ONLY, SegDataset._augment, train.py:65-85):
+   - Random horizontal flip (p=0.5), vertical flip (p=0.5).
+   - Rotation, angle ~U(-30,30) deg (bilinear image / nearest mask).
+   - Random affine (p=0.5): degrees +-15, translate 0.1, scale 0.9-1.1, shear +-5.
+   - ColorJitter(0.2,0.2,0.2,0.1).
+   - NO augmentation on val/test (only train split augments; train.py:103-104).
+Batch size : --batch_size (default 2); recorded per run in config.txt
+             (e.g. stabilized_maffnet_ISIC2016 = 2). Paper-faithful runs used 8
+             (PUBLICATION_ENGINEERING_REFERENCE §6). Per-run value is authoritative.
+Epochs     : --epochs (default 5; --fast=3); final experiments = 40 (config.txt).
+Optimizer / scheduler / precision — TWO training paths:
+   (a) MAFF-Net family (maffnet, stabilized_maffnet, maffnet_original_reconstructed)
+       -> MAFFNetTrainer (train.py:238-266):
+         * AdamW, lr default 1e-3, weight_decay 0.01 (trainer.py:280); MMPA gamma
+           excluded from weight decay (trainer.py:275-284).
+         * Scheduler LinearLR start_factor 1.0 -> end_factor 0.0 over num_epochs
+           (trainer.py:287-291).
+         * bf16 autocast, no GradScaler (trainer.py:337); non-finite loss guard
+           raises (trainer.py:341); gradient-norm clip 1.0 (trainer.py:346).
+         * NO early stopping (runs all epochs).
+   (b) Baselines (unet, unetpp, attention_unet, transunet) -> SimpleTrainer
+       (train.py:275-284; training/simple_trainer.py):
+         * Loss = SimpleLoss = Dice + BCEWithLogits(pos_weight=2.0)
+           (simple_trainer.py:34-39).
+         * Early stopping on val Dice, patience = --patience (default 10;
+           train.py:127-129, simple_trainer.py:71,80,282-343).
+         * Optimizer/scheduler/AMP defined in simple_trainer.py (Dice+BCE path);
+           GradScaler available in the generic Trainer class (trainer.py:633).
+Checkpoint strategy:
+   * MAFFNetTrainer: saves model_epoch_N.pth every epoch + best_maffnet.pth on
+     best val Dice (trainer.py:517-529); copies best -> run_dir/model.pth
+     (trainer.py:555-559).
+   * SimpleTrainer: best checkpoint by val Dice; writes metrics.json
+     (simple_trainer.py:331-337,409-411).
+STATUS: Training pipeline reconstructed.  PASS.
+
+
+3. EVALUATION PIPELINE
+--------------------------------------------------------------------------------
+Validation (per epoch):
+   * MAFFNetTrainer._val_epoch (trainer.py:368-397): model.eval(); metrics computed
+     on p1 (finest prediction, preds[0]); best model = highest val Dice.
+   * SimpleTrainer: analogous val loop, monitors val Dice.
+Test:
+   * SimpleTrainer receives test_loader (train.py:230-235) and writes test metrics
+     to run_dir/metrics.json (simple_trainer.py:409-411).
+   * MAFFNetTrainer.train (used for MAFF-Net family) does NOT run the held-out test
+     set by default; it writes VALIDATION metrics to run_dir/summary.csv
+     (trainer.py:445-457,535). (MAFFNetTrainer.evaluate(test_loader) exists,
+     trainer.py:571-603, but is not invoked from train.py for these models.)
+   => Proposed/Restored/Faithful metrics are VALIDATION; baseline metrics are TEST.
+Checkpoint selection: best validation Dice (both trainers).
+Inference: model.eval() returns the finest-resolution prediction p1.
+STATUS: Evaluation pipeline reconstructed.  PASS (with Major M2, val != test).
+
+
+4. METRICS
+--------------------------------------------------------------------------------
+Implementation: compute_metrics (trainer.py:212-242), shared by both trainers.
+Metrics (threshold 0.5): Accuracy (acc), Dice, mIoU, Sensitivity, Specificity, F1.
+   (For binary masks F1 == Dice, per code comment trainer.py:233.)
+Aggregation: per-batch metrics weighted by batch size and averaged over the split
+   (sum(metric * bs)/n) — trainer.py:387-396 (val), 593-599 (test).
+Final reported metrics:
+   * MAFF-Net family -> run_dir/summary.csv (val_loss + acc/dice/mIoU/sens/spec/f1
+     + best_dice + config) — trainer.py:445-457.
+   * Baselines -> run_dir/metrics.json (test) — simple_trainer.py:409-411.
+   * Aggregation utility utils/aggregate_benchmark.py scans experiments/*/metrics.json.
+STATUS: Metrics verified.  PASS.
+
+
+5. BASELINES
+--------------------------------------------------------------------------------
+Repository baselines (implemented + registered, train.py:158 choices):
+   * U-Net (unet), Attention U-Net (attention_unet), UNet++ (unetpp),
+     TransUNet (transunet)  -> SimpleTrainer, test-set metrics.json.
+MAFF-Net family (also runnable, MAFFNetTrainer):
+   * maffnet (Restored MAFF-Net), stabilized_maffnet (Proposed MAFF-Net),
+     maffnet_original_reconstructed (Paper-faithful Reconstruction).
+Synopsis / paper baselines NOT implemented in the repository:
+   * SGT-Net (synopsis-listed baseline) — ABSENT from repo.
+   * Swin-UNet (Original MAFF-Net paper baseline) — ABSENT from repo.
+   => Repository baseline set differs from the synopsis baseline set (Major M3).
+STATUS: Baselines identified.  PASS (with Major M3, missing SGT-Net/Swin-UNet).
+
+
+6. HARDWARE / ENVIRONMENT
+--------------------------------------------------------------------------------
+Verifiable from the live environment (conda env `segmentation`):
+   * Python 3.10.20
+   * PyTorch 2.7.1+cu118 ; CUDA build 11.8 ; torch.cuda.is_available() = True
+   * OS: Windows (repository environment).
+   * requirements.txt present at repository root.
+NOT recorded in the repository (per-experiment):
+   * GPU model, CPU, driver, exact CUDA runtime — [NOT RECORDED in config.txt or
+     experiment folders]. config.txt logs only model/dataset/epochs/batch_size/
+     img_size/lr.
+STATUS: Hardware verified at environment level; per-run hardware [NOT RECORDED]
+        (Editorial e1).
+
+
+7. REPRODUCIBILITY
+--------------------------------------------------------------------------------
+Random seed (training): NONE. No manual_seed / random.seed / np.random.seed in
+   train.py, training/trainer.py, or training/simple_trainer.py (grep: no matches).
+   => Training runs are NOT seeded (Major M1).
+Determinism: no torch.use_deterministic_algorithms / cudnn.deterministic settings
+   found => non-deterministic (Major M1).
+Split reproducibility: the train/val/test splits were generated with a fixed seed
+   (seed 42; scripts/resplit_isic2017.py, SPLIT_AUDIT.md) — split creation is
+   reproducible even though training is not.
+Configuration logging: run_dir/config.txt (6 fields: model, dataset, epochs,
+   batch_size, img_size, lr). Seed, optimizer, scheduler, augmentation, and
+   hardware are NOT logged per run (Minor m1).
+Checkpoints: saved (per-epoch + best for MAFF-Net family; best for baselines).
+Logging: training_log.csv written to save_dir (default `checkpoints/`), shared and
+   overwritten across runs (trainer.py:298, simple_trainer.py:100); per-run epoch
+   logs are not preserved under experiments/ — loss_curve.png / iou_curve.png are
+   the surviving per-run curves (Minor m2).
+TensorBoard: only the generic Trainer class exposes an optional SummaryWriter
+   (trainer.py:621,634; default None); MAFFNetTrainer and SimpleTrainer (the main
+   paths) do not use TensorBoard.
+STATUS: Reproducibility verified (state documented). Gaps M1 (no seed) Major.
+
+
+8. EXPERIMENTAL RISKS (repository-backed)
+--------------------------------------------------------------------------------
+CRITICAL: none (the pipeline is fully reconstructable from the repository).
+
+MAJOR:
+  M1. No training random seed / no determinism controls -> runs not bit-exactly
+      reproducible (train.py, trainer.py, simple_trainer.py: no seed).
+  M2. Proposed/Restored/Faithful report VALIDATION metrics (summary.csv) while
+      baselines report TEST metrics (metrics.json) -> not directly comparable until
+      a proposed test-set run is produced (trainer.py:445-457 vs
+      simple_trainer.py:409-411).
+  M3. Synopsis/paper baselines SGT-Net and Swin-UNet are not implemented in the
+      repository; the implemented baseline set differs from the synopsis.
+
+MINOR:
+  m1. config.txt logs only 6 fields; seed/optimizer/scheduler/augmentation/hardware
+      not recorded per run.
+  m2. training_log.csv shared in save_dir (overwritten across runs); per-run epoch
+      logs not preserved in experiments/.
+  m3. MAFFNetTrainer has no early stopping (runs full epochs); only SimpleTrainer
+      early-stops. (Behavioral difference between the two paths, not a defect.)
+
+EDITORIAL:
+  e1. Per-experiment hardware (GPU/CPU/driver) not recorded in the repository;
+      only inferable from the live environment.
+
+
+GOAL STATE
+--------------------------------------------------------------------------------
+[x] Dataset pipeline reconstructed
+[x] Training pipeline reconstructed
+[x] Evaluation pipeline reconstructed
+[x] Metrics verified
+[x] Baselines identified
+[x] Hardware verified (environment level; per-run hardware not recorded)
+[x] Reproducibility verified (state documented; M1 gap noted)
+[x] No unresolved Critical findings
+=> GOAL STATE: PASS  (Major findings M1-M3 documented for manuscript attention;
+   none is Critical / none blocks pipeline reconstruction.)
+
+--------------------------------------------------------------------------------
+No code, data, or manuscript modified. Conclusions trace to repository evidence;
+unrecorded items marked [NOT RECORDED].
+================================================================================

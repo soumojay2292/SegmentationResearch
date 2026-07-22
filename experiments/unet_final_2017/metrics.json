@@ -1,0 +1,48 @@
+{
+  "model": "unet",
+  "dataset": "ISIC_2017",
+  "split": "test",
+  "accuracy": 0.9031499905056117,
+  "dice": 0.7228795204167949,
+  "miou": 0.6152471983683272,
+  "sensitivity": 0.7211473409420229,
+  "specificity": 0.9561598133036678,
+  "f1": 0.7228795204167949,
+  "val": {
+    "acc": 0.8597,
+    "dice": 0.6186,
+    "mIoU": 0.4964,
+    "sensitivity": 0.7379,
+    "specificity": 0.8912,
+    "f1": 0.6186
+  },
+  "test_loss": 0.791447,
+  "test": {
+    "acc": 0.9031499905056117,
+    "dice": 0.7228795204167949,
+    "mIoU": 0.6152471983683272,
+    "sensitivity": 0.7211473409420229,
+    "specificity": 0.9561598133036678,
+    "f1": 0.7228795204167949
+  },
+  "n_test_images": 200,
+  "checkpoint": "experiments/unet_final_2017/model.pth",
+  "checkpoint_epoch": 13,
+  "checkpoint_val_dice": 0.6338688163129457,
+  "best_val_dice": 0.6339,
+  "config": {
+    "model": "unet",
+    "dataset": "ISIC_2017",
+    "data_root": "dataset_split",
+    "epochs": "20",
+    "batch_size": "2",
+    "lr": "0.001",
+    "weight_decay": "0.01",
+    "img_size": "384",
+    "fast": "False",
+    "workers": "2",
+    "save_dir": "checkpoints",
+    "exp": "unet_final_2017",
+    "eval_only": true
+  }
+}

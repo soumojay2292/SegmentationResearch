@@ -1,0 +1,32 @@
+{
+  "model": "maffnet_original_reconstructed",
+  "dataset": "ISIC_2018",
+  "split": "test",
+  "accuracy": 0.9514226589072811,
+  "dice": 0.8655284734545838,
+  "miou": 0.7855188035410267,
+  "sensitivity": 0.8779263158719924,
+  "specificity": 0.9730367185603722,
+  "f1": 0.8655284734545838,
+  "test": {
+    "acc": 0.9514226589072811,
+    "dice": 0.8655284734545838,
+    "mIoU": 0.7855188035410267,
+    "sensitivity": 0.8779263158719924,
+    "specificity": 0.9730367185603722,
+    "f1": 0.8655284734545838
+  },
+  "n_test_images": 392,
+  "checkpoint": "experiments/maffnet_original_ISIC2018_final/model.pth",
+  "checkpoint_epoch": 35,
+  "checkpoint_val_dice": 0.8692551706032889,
+  "config": {
+    "model": "maffnet_original_reconstructed",
+    "dataset": "ISIC_2018",
+    "data_root": "dataset_split",
+    "img_size": 384,
+    "batch_size": 2,
+    "exp": "maffnet_original_ISIC2018_final",
+    "eval_only": true
+  }
+}

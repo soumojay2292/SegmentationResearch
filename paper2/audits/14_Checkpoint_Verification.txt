@@ -1,0 +1,117 @@
+================================================================================
+CHECKPOINT VERIFICATION — Paper 2  (Execution, Step 1 of 13_Results_Completion_Plan)
+Lead Experiment Execution Engineer
+================================================================================
+Task   : verify that every canonical checkpoint loads into the CURRENT codebase.
+Method : build each model with the current code, torch.load the checkpoint, run
+         load_state_dict(strict=False) (missing / unexpected / shape mismatch) and
+         then load_state_dict(strict=True).
+Scope  : verification only. Nothing retrained, nothing evaluated, no code changed.
+================================================================================
+
+
+1. RESULT — ALL 9 CANONICAL CHECKPOINTS LOAD (STRICT PASS)
+--------------------------------------------------------------------------------
+Model (paper term)            Dataset  Checkpoint path                              Epoch  Ckpt Dice  Keys  Prefix    Missing  Unexpected  ShapeMismatch  Strict
+----------------------------  -------  -------------------------------------------  -----  ---------  ----  --------  -------  ----------  -------------  ------
+Proposed MAFF-Net             2016     experiments/stabilized_maffnet_ISIC2016/     38     0.93267    714   (none)    0        0           0              PASS
+  (stabilized_maffnet)                   model.pth
+Proposed MAFF-Net             2017     experiments/stabilized_maffnet_ISIC2017/     31     0.91080    714   (none)    0        0           0              PASS
+                                         model.pth
+Proposed MAFF-Net             2018     experiments/stabilized_maffnet_ISIC2018/     32     0.87795    714   (none)    0        0           0              PASS
+                                         model.pth
+Restored MAFF-Net             2016     experiments/maffnet_ISIC2016_final/model.pth 32     0.93668    804   (none)    0        0           0              PASS
+  (maffnet)                   2017     experiments/maffnet_ISIC2017_final/model.pth 25     0.91505    804   (none)    0        0           0              PASS
+                              2018     experiments/maffnet_ISIC2018_final/model.pth 39     0.88755    804   (none)    0        0           0              PASS
+Paper-faithful Reconstruction 2016     experiments/maffnet_original_ISIC2016_final/ 37     0.91305    411   model.    0        0           0              PASS
+  (maffnet_original_                     model.pth
+   reconstructed)             2017     experiments/maffnet_original_ISIC2017_final/ 38     0.88842    411   model.    0        0           0              PASS
+                                         model.pth
+                              2018     experiments/maffnet_original_ISIC2018_final/ 35     0.86926    411   model.    0        0           0              PASS
+                                         model.pth
+
+Checkpoint container format (all 9): dict with keys
+   ['epoch', 'state_dict', 'optim', 'dice']   (trainer.py save format).
+
+
+2. COMPATIBILITY DETAIL
+--------------------------------------------------------------------------------
+state_dict compatibility : 0 missing, 0 unexpected, 0 shape mismatches for all 9.
+Adapter compatibility    : the three Paper-faithful checkpoints carry the "model."
+   prefix and load ONLY into the adapter-wrapped model
+   (train._MAFFNetOriginalAdapter(MAFFNetOriginalReconstructed(...))). Verified PASS.
+   Proposed and Restored checkpoints have NO prefix and load into the bare model.
+C5 grouping risk (previously flagged [NOT VERIFIED]) : RESOLVED — no shape mismatch
+   on rdb.fuse_convs.*; the Paper-faithful checkpoints are consistent with the
+   current grouped-fuse configuration.
+Version compatibility    : loaded under Python 3.10.20 / torch 2.7.1+cu118 with
+   weights_only=False; no deserialization errors.
+Backbone construction    : Proposed and Restored were built with the real SAM2
+   backbone (checkpoints/sam2.1_hiera_large.pt) and loaded strict-PASS, confirming
+   those runs used pretrained SAM2 weights.
+
+
+3. FINDING (Major) — Paper-faithful runs used the PLACEHOLDER encoder
+--------------------------------------------------------------------------------
+The three Paper-faithful checkpoints strict-load into a model built with
+sam_checkpoint=None, and their encoder keys are
+   model.encoder.trunk.stem.weight / model.encoder.trunk.down.* ,
+i.e. the shape-compatible _DummyHieraTrunk placeholder — not the real SAM2 Hiera
+trunk (which would expose patch_embed/blocks keys and would fail a strict load into
+the placeholder model).
+=> The maffnet_original_ISIC*_final experiments were trained WITHOUT the pretrained
+   SAM2 backbone.
+Classification: Major (affects interpretation of the Paper-faithful results only).
+Action: Document. This does NOT block test evaluation — the checkpoints load and can
+   be evaluated as-is — but any reported Paper-faithful numbers must be labelled as
+   obtained with the placeholder encoder, or the runs re-trained with real SAM2 if
+   they are to represent a pretrained-backbone reproduction.
+No other checkpoint is affected (Proposed and Restored use real SAM2).
+
+
+4. REPOSITORY PREPARATION FOR TEST EVALUATION
+--------------------------------------------------------------------------------
+Existing evaluation API :
+   training/trainer.py :: MAFFNetTrainer.evaluate(test_loader, checkpoint=None)
+   (trainer.py:571-603) — loads ckpt["state_dict"], runs the test loop, prints and
+   RETURNS the metric dict {acc, dice, mIoU, sensitivity, specificity, f1}.
+Existing CLI            : NONE. train.py has no evaluation-only flag; it always
+   constructs a trainer and calls trainer.train(...). Test evaluation for the
+   MAFF-Net family must therefore be invoked programmatically via the API above.
+Test data               : dataset_split/<DATASET>/test.csv + test/ images+masks
+   (already present); loader built with train.SegDataset(split="test") — no
+   augmentation is applied to the test split.
+Output locations (destinations to use):
+   metrics.json  -> experiments/<run_dir>/metrics.json
+                    (same destination the baselines use; the schema consumed by
+                     utils/aggregate_benchmark.py, which scans
+                     experiments/*/metrics.json)
+   summary.csv   -> experiments/<run_dir>/summary.csv ALREADY EXISTS and holds the
+                    VALIDATION metrics. It must NOT be overwritten; test metrics go
+                    to metrics.json so that validation and test results remain
+                    separable.
+Operational cautions for the evaluation invocation:
+   (a) MAFFNetTrainer.__init__ calls _init_csv() and WRITES training_log.csv into
+       save_dir (trainer.py:298-299). Pass a scratch save_dir when constructing the
+       trainer for evaluation, otherwise the shared checkpoints/training_log.csv is
+       overwritten.
+   (b) MAFFNetTrainer.evaluate does not itself persist metrics.json; the returned
+       dict must be written to the destination above by the calling command.
+   (c) Paper-faithful evaluation must wrap the model in _MAFFNetOriginalAdapter and
+       build it with sam_checkpoint=None (to match the placeholder-encoder
+       checkpoints); Proposed/Restored must be built with
+       checkpoints/sam2.1_hiera_large.pt.
+
+
+5. STATUS
+--------------------------------------------------------------------------------
+Checkpoints verified          : 9 / 9  STRICT PASS
+Failed checkpoints            : none
+Retraining required           : none (Step 1 of the completion plan closes with
+                                no escalation; Steps 2 and 3 remain evaluation-only)
+Evaluation ready              : YES
+=> CHECKPOINT VERIFICATION: PASS
+
+--------------------------------------------------------------------------------
+No evaluation executed, no retraining, no code or experiment output modified.
+================================================================================

@@ -1,0 +1,40 @@
+{
+  "model": "stabilized_maffnet_ablation",
+  "ablate": "freq",
+  "dataset": "ISIC_2018",
+  "split": "test",
+  "accuracy": 0.9495868293606189,
+  "dice": 0.8708256092653887,
+  "miou": 0.7867532814670093,
+  "sensitivity": 0.8937852112531278,
+  "specificity": 0.9705340667750936,
+  "f1": 0.8708256092653887,
+  "test": {
+    "acc": 0.9495868293606189,
+    "dice": 0.8708256092653887,
+    "mIoU": 0.7867532814670093,
+    "sensitivity": 0.8937852112531278,
+    "specificity": 0.9705340667750936,
+    "f1": 0.8708256092653887
+  },
+  "n_test_images": 392,
+  "checkpoint": "experiments\\ablation_no_frequency\\model.pth",
+  "checkpoint_epoch": 33,
+  "checkpoint_val_dice": 0.8755770452058956,
+  "best_val_dice": 0.8755770452058956,
+  "train_seconds": 7419.7,
+  "config": {
+    "model": "stabilized_maffnet_ablation",
+    "ablate": "freq",
+    "dataset": "ISIC_2018",
+    "data_root": "dataset_split",
+    "epochs": 40,
+    "batch_size": 2,
+    "lr": 0.001,
+    "weight_decay": 0.01,
+    "img_size": 384,
+    "workers": 2,
+    "exp": "ablation_no_frequency",
+    "eval_only": false
+  }
+}

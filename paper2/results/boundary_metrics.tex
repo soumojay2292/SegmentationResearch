@@ -1,0 +1,36 @@
+% Boundary-sensitive metrics - Paper 2
+% Evaluation-only from existing canonical checkpoints. Requires \usepackage{booktabs}
+\begin{table*}[t]
+\centering
+\caption{Boundary-sensitive evaluation on the held-out test splits. HD95 and ASSD are reported in pixels of the $384\times384$ evaluation grid (lower is better); Boundary IoU uses the formulation of Cheng et al. with a dilation ratio of $0.02$ (higher is better). HD95 and ASSD are undefined for empty predictions or empty references; such cases are excluded and counted in $n_{\mathrm{valid}}$. Best per dataset in bold.}
+\label{tab:boundary}
+\begin{tabular}{llccc c}
+\toprule
+Dataset & Model & HD95 (px) $\downarrow$ & ASSD (px) $\downarrow$ & Boundary IoU $\uparrow$ & $n_{\mathrm{valid}}/n$ \\
+\midrule
+ISIC 2016 & U-Net & 61.976 & 22.527 & 0.3195 & 192/192 \\
+ & Attention U-Net & 50.465 & 18.221 & 0.2436 & 192/192 \\
+ & UNet++ & 48.244 & 18.341 & 0.3283 & 190/192 \\
+ & TransUNet & 43.779 & 16.368 & 0.2898 & 192/192 \\
+ & MAFF-Net (Paper-faithful Recon.) & 24.678 & 10.053 & 0.4101 & 191/192 \\
+ & MAFF-Net (Restored) & \textbf{21.979} & \textbf{8.336} & \textbf{0.4518} & 192/192 \\
+ & MAFF-Net (Proposed) & 23.329 & 8.510 & 0.4514 & 192/192 \\
+\midrule
+ISIC 2017 & U-Net & 60.572 & 23.027 & 0.3560 & 194/200 \\
+ & Attention U-Net & 40.745 & 17.004 & 0.3749 & 198/200 \\
+ & UNet++ & 42.561 & 15.603 & 0.4244 & 197/200 \\
+ & TransUNet & 26.750 & 9.710 & 0.4585 & 200/200 \\
+ & MAFF-Net (Paper-faithful Recon.) & 24.210 & 9.409 & 0.4806 & 200/200 \\
+ & MAFF-Net (Restored) & \textbf{16.788} & \textbf{6.565} & 0.5255 & 200/200 \\
+ & MAFF-Net (Proposed) & 16.869 & 6.645 & \textbf{0.5277} & 200/200 \\
+\midrule
+ISIC 2018 & U-Net & 72.867 & 29.454 & 0.2958 & 388/392 \\
+ & Attention U-Net & 47.746 & 19.645 & 0.3035 & 385/392 \\
+ & UNet++ & 63.710 & 25.348 & 0.2672 & 383/392 \\
+ & TransUNet & 41.836 & 15.092 & 0.3406 & 392/392 \\
+ & MAFF-Net (Paper-faithful Recon.) & 23.136 & 9.606 & 0.4491 & 390/392 \\
+ & MAFF-Net (Restored) & \textbf{20.570} & \textbf{8.199} & \textbf{0.4701} & 392/392 \\
+ & MAFF-Net (Proposed) & 22.554 & 9.240 & 0.4611 & 391/392 \\
+\bottomrule
+\end{tabular}
+\end{table*}

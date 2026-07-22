@@ -1,0 +1,229 @@
+================================================================================
+COMPONENT ABLATION DESIGN — Paper 2   (FINAL EXPERIMENT DESIGN)
+Lead Experiment Design Engineer
+================================================================================
+Task   : design the MINIMUM scientifically valid component ablation for the
+         Proposed MAFF-Net, from inspection of the canonical implementation only.
+Scope  : design only. No training, no evaluation, NO code modified. All "code
+         change" text below is a SPECIFICATION for a future execution step, not an
+         applied edit.
+Result : PASS — a 3-run leave-one-out ablation on one dataset (reusing the existing
+         Full checkpoint as the reference) is sufficient for the three ARCHITECTURAL
+         module claims. It does NOT cover the BcDS supervision claim; that gap is
+         stated explicitly in section VERIFY.
+Source of truth: models/stabilized_maffnet.py, modules/{frequency_branch,
+         feature_alignment,gated_fusion}.py, training/trainer.py (protocol).
+================================================================================
+
+
+1. PROPOSED COMPONENTS (the actual contributions only)
+--------------------------------------------------------------------------------
+The contribution boundary is fixed: the SAM2 encoder, the DecoderBlock, the RDB,
+and ConvBNReLU are REUSED from models/maffnet.py and are NOT contributions. They are
+excluded from the ablation by rule. The forward pass that defines the contributions
+(stabilized_maffnet.py:101-108) is:
+
+    for i, f in enumerate(feats):              # feats = 4 frozen-encoder scales
+        fs = self.align_s[i](f)                # spatial stream  : Feature Alignment
+        ff = self.align_f[i](self.freq[i](f))  # frequency stream: Freq Branch -> Align
+        fused.append(self.fuse[i](fs, ff))     # Gated Fusion
+
+  C1  Frequency Branch
+      module : FrequencyBranch          file  : modules/frequency_branch.py
+      class  : FrequencyBranch          member: self.freq (ModuleList, one per scale)
+      purpose: parameter-free fp32 rFFT -> radial high-pass (cutoff 0.1) -> irFFT;
+               supplies a boundary-sensitive spectral feature at each scale.
+               Manuscript claim: III-D (explicit spectral boundary route).
+
+  C2  Feature Alignment
+      module : FeatureAlignment         file  : modules/feature_alignment.py
+      class  : FeatureAlignment         member: self.align_s, self.align_f
+      purpose: InstanceNorm(affine=False) -> 1x1 Conv -> ReLU; harmonises the
+               statistics of the spatial and frequency streams before fusion.
+               Manuscript claim: III-E (reconcile streams onto a common footing).
+
+  C3  Gated Fusion
+      module : GatedFusion              file  : modules/gated_fusion.py
+      class  : GatedFusion              member: self.fuse (ModuleList, one per scale)
+      purpose: g = sigmoid(Conv1x1([fs||ff])); out = g*fs + (1-g)*ff; a learned,
+               per-pixel convex combination of the two aligned streams.
+               Manuscript claim: III-F (learned fusion vs a fixed rule).
+
+  SUPERVISION CONTRIBUTION (architecturally separate — see VERIFY)
+  C4  Boundary-centric Dual Supervision (BDS + EWR)
+      file: training/trainer.py::MAFFNetLoss. This is a LOSS-side contribution, not a
+      forward-pass module. It cannot be ablated by disabling a forward module and is
+      therefore out of scope for THIS (architectural) matrix. Its own ablation is
+      described but not folded into the minimum matrix.
+
+
+2. INDEPENDENT-DISABLE ANALYSIS
+--------------------------------------------------------------------------------
+For each contribution: can it be disabled on its own, shape-safely, without
+touching the encoder/decoder or the other two modules? The channel widths are
+preserved through all three modules (FeatureAlignment is built as (c -> c),
+FrequencyBranch preserves shape, GatedFusion is (2c -> c)), so identity/parameter-
+free replacements are shape-compatible everywhere.
+
+  C1 Frequency Branch      DISABLE: YES
+     Change: replace self.freq[i] with nn.Identity(), i.e. the frequency stream
+             becomes  ff = self.align_f[i](f)  instead of align_f[i](freq[i](f)).
+     Why valid & isolated: FrequencyBranch is parameter-free and shape-preserving,
+             so removing it leaves the alignment and gate intact and changes ONLY the
+             spectral content. The gate then fuses two differently-aligned views of
+             the SAME feature, which is exactly the control that tests whether the
+             high-pass spectral route contributes (III-D).
+
+  C2 Feature Alignment     DISABLE: YES
+     Change: replace self.align_s[i] and self.align_f[i] with nn.Identity(), i.e.
+             fs = f  and  ff = self.freq[i](f).
+     Why valid & isolated: FeatureAlignment maps c -> c, so GatedFusion still
+             receives two c-width tensors. This sends the raw SAM feature and the
+             (near zero-mean) high-pass output to the gate UNNORMALISED — precisely
+             the mismatch III-E argues must be reconciled.
+     Disclose: the module bundles InstanceNorm + 1x1 Conv + ReLU, so this removes a
+             nonlinearity and the projection as well as the normalisation. That is
+             the module ablated as a unit; it is the correct and standard reading of
+             "- Feature Alignment", and must be reported as such.
+
+  C3 Gated Fusion          DISABLE: YES (replace with a fixed fusion, not remove)
+     Change: replace self.fuse[i](fs, ff) with the parameter-free mean
+             0.5*(fs + ff).
+     Why valid & isolated: the gate cannot simply be deleted (something must combine
+             the two streams into one c-width tensor for the decoder). The minimal
+             fixed control is the unweighted mean, which is exactly the "unweighted
+             summation / fixed transformation" baseline III-F contrasts against.
+             Mean (not sum) is used so the output magnitude matches the gated case
+             and the comparison is not confounded by a scale change. Concatenation +
+             1x1 conv is rejected as the control because it re-introduces learnable
+             fusion parameters.
+
+  NON-INVASIVE IMPLEMENTATION (respects "do not modify existing models"):
+     Do NOT edit stabilized_maffnet.py. Create ONE new file,
+     models/stabilized_maffnet_ablation.py, with a subclass
+        class StabilizedMAFFNetAblation(StabilizedMAFFNet):
+            def __init__(self, *a, ablate=None, **k):
+                super().__init__(*a, **k)
+                if ablate == "freq":  self.freq   = nn.ModuleList([nn.Identity() ...])
+                if ablate == "align": self.align_s = ...Identity...; self.align_f = ...
+                # for "fusion", override forward to use 0.5*(fs+ff)
+     plus a train.py choice "stabilized_maffnet_ablation" with an --ablate arg. The
+     canonical model, trainer, and loss are untouched; each ablation is one flag.
+
+
+3. MINIMUM ABLATION MATRIX (leave-one-out)
+--------------------------------------------------------------------------------
+Leave-one-out isolates the marginal contribution of each module with the other two
+present, which is what directly supports the per-module claims. All runs MUST use
+the canonical protocol (train.py + MAFFNetTrainer + MAFFNetLoss: 40 epochs, AdamW,
+LinearLR->0, bf16, BcDS lambda 0.05/0.05, best-val-Dice selection) so the only
+variable is the disabled module.
+
+  Run  Configuration            freq   align  gate     Provides
+  ---  -----------------------  -----  -----  -------  ----------------------------
+   1   Full Proposed            ON     ON     gated    reference (ALREADY EXISTS —
+                                                       reuse the canonical
+                                                       stabilized_maffnet_ISIC*
+                                                       checkpoint; no new training)
+   2   - Frequency Branch       IDENT  ON     gated    marginal value of C1 (III-D)
+   3   - Feature Alignment      ON     IDENT  gated    marginal value of C2 (III-E)
+   4   - Gated Fusion           ON     ON     mean     marginal value of C3 (III-F)
+
+  NEW training runs required: 3 (Runs 2-4).  Run 1 is the existing Full checkpoint.
+
+  Dataset: run the ablation on ONE representative dataset. RECOMMENDED = ISIC 2018 —
+  it is the largest (1825 train / 392 test), the hardest, and the dataset where the
+  Restored-vs-Proposed gap is widest, so it is the most sensitive probe of the
+  modules. ISIC 2016 (895 train) is the cheaper alternative if GPU time is the
+  binding constraint.
+
+  Fairness note: because no random seed is set anywhere in the project, Runs 2-4 and
+  the existing Full differ in initialisation RNG. This matches the single-run,
+  unseeded status of every other result in the paper and is acceptable IF disclosed.
+  For strict same-protocol pairing, add Run 1' (a fresh Full run on the ablation
+  dataset) — this makes it 4 new runs. Recommended but not part of the minimum.
+
+
+4. ESTIMATES (grounded in recorded wall-clock, not assumed)
+--------------------------------------------------------------------------------
+Per-run training wall clock was recovered from the canonical Proposed runs as the
+gap between config.txt (written at training start) and the final model.pth:
+   ISIC 2016 ~54 min | ISIC 2017 ~76 min | ISIC 2018 ~109 min  (RTX 2000 Ada, bs 2,
+   40 epochs). This scales ~linearly with train-set size (~1 s / image-epoch) and is
+   used directly below. Ablations remove a parameter-free module (C1), two 1x1-conv
+   modules (C2), or one 1x1-conv gate (C3); none increases cost, so per-run time is
+   <= the Full time. Estimates below use the Full time as an upper bound.
+
+  ISIC 2018 (recommended):
+     minimum  = 3 new runs x ~1.8 h  = ~5.5 GPU-h
+     with fresh Full (4 runs)        = ~7.3 GPU-h
+  ISIC 2016 (cheapest):
+     minimum  = 3 new runs x ~0.9 h  = ~2.7 GPU-h
+     with fresh Full (4 runs)        = ~3.6 GPU-h
+  Plus boundary + region evaluation of the 3 new checkpoints (inference only): the
+  Step-7 script measured ~30-60 s per checkpoint -> < 5 min total. Negligible.
+
+  RECOMMENDED BUDGET: ISIC 2018, minimum 3 runs, ~5.5 GPU-h (add ~1.8 h for a fresh
+  Full pairing if the reviewer requires it).
+
+  Expected checkpoints : 3 new (experiments/<ablation-run>/model.pth + best), one per
+                         disabled module.
+  Expected outputs     : per new run — model.pth, best checkpoint, summary.csv,
+                         checkpoints/training_log.csv, loss_curve.png, iou_curve.png,
+                         samples/. Then per run: metrics.json (region, via the Step-2
+                         path) and a boundary row (via the Step-7 script).
+  Benchmark tables req.: (a) ablation REGION table — Dice/IoU/Sensitivity/Specificity
+                         on the test split, filling paper/tables/ablation_tables.md
+                         Table IV; (b) ablation BOUNDARY table — HD95/ASSD/Boundary
+                         IoU, the more relevant view since all three modules are
+                         boundary-oriented; (c) optional Fig 8 bar chart from (a)/(b).
+
+
+5. VERIFY — is this ablation sufficient for the manuscript's module claims?
+--------------------------------------------------------------------------------
+  SUFFICIENT FOR:
+    - III-D Frequency Branch contributes            -> Run 2 gives its marginal delta
+    - III-E Feature Alignment contributes           -> Run 3 gives its marginal delta
+    - III-F Gated Fusion beats a fixed combination  -> Run 4 (vs Full) gives its delta
+    These are exactly the three architectural module-level claims. With region +
+    boundary metrics per run, each claim is supported by a concrete number, and the
+    empty Table IV is filled with real values.
+
+  NOT SUFFICIENT FOR (still unsupported after this ablation — stated plainly):
+    U1  BcDS efficacy (III-H).  BDS and EWR are loss terms, not forward modules, and
+        are ON in every run of this matrix. Their contribution remains UNMEASURED.
+        To support a BcDS efficacy claim, a SEPARATE loss ablation is required
+        (Table VI: A base / B +BDS / C +EWR / D full = 3 additional runs). If that is
+        not run, III-H must stay descriptive/auxiliary and make NO efficacy claim
+        (consistent with audit 19 N6).
+    U2  Cutoff sensitivity (Table V).  The frequency cutoff (0.1) is a fixed design
+        choice; this matrix does not vary it. Either declare it a design choice or
+        run the 4-point sweep. Optional.
+    U3  Statistical significance.  All runs are single and unseeded, so the ablation
+        yields point estimates, not significance. Small deltas cannot be called
+        meaningful without >= 3 seeds per configuration. This matrix does not, and
+        cannot, establish significance on its own.
+    U4  Generalisation across datasets.  A single-dataset ablation supports the
+        module claims for that dataset. If the manuscript states the modules help
+        "across ISIC 2016/2017/2018", the ablation must be repeated on the other two
+        (x3 the runs). Minimum design assumes the claim is scoped to one dataset.
+
+  RECOMMENDATION: run the 3-run architectural matrix on ISIC 2018 (the minimum), and
+  either (a) keep BcDS described as auxiliary with no efficacy claim, or (b) add the
+  3-run BcDS loss ablation if that claim is wanted. Do not describe any ablation
+  delta as "significant" without multi-seed runs.
+
+
+6. STATUS
+--------------------------------------------------------------------------------
+Ablation runs (minimum)   : 3 new  (+ existing Full as reference; +1 optional fresh Full)
+Components to disable      : Frequency Branch, Feature Alignment, Gated Fusion
+Estimated GPU time         : ~5.5 GPU-h (ISIC 2018, 3 runs) | ~2.7 GPU-h (ISIC 2016)
+Design covers module claims: YES for the 3 architectural modules; NO for BcDS (U1),
+                             cutoff (U2), significance (U3), cross-dataset (U4)
+Code modified              : NONE (design only; non-invasive subclass specified)
+=> ABLATION DESIGN: PASS — ready for execution on approval.
+
+--------------------------------------------------------------------------------
+Design only. No training, no evaluation, no code modified.
+================================================================================

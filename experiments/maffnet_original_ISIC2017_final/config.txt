@@ -1,0 +1,6 @@
+model:      maffnet_original_reconstructed
+dataset:    ISIC_2017
+epochs:     40
+batch_size: 8
+img_size:   384
+lr:         0.001

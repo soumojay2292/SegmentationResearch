@@ -1,0 +1,22 @@
+model,dataset,split,table,dice,miou,accuracy,precision_derived,precision_measured,recall,f1,f1_equals_dice_by_construction,specificity,n_test,epochs,best_or_ckpt_epoch,source_metrics_json
+U-Net,ISIC 2016,test,primary,0.7874,0.6808,0.8951,0.8113,False,0.7649,0.7874,True,0.9609,192,40,38,experiments/unet_ISIC_2016/metrics.json
+U-Net,ISIC 2017,test,primary,0.7229,0.6152,0.9031,0.7246,False,0.7211,0.7229,True,0.9562,200,20,13,experiments/unet_final_2017/metrics.json
+U-Net,ISIC 2018,test,primary,0.6866,0.5714,0.8732,0.6154,False,0.7766,0.6866,True,0.8948,392,40,37,experiments/unet_ISIC_2018/metrics.json
+TransUNet,ISIC 2016,test,primary,0.8365,0.7349,0.9161,0.8675,False,0.8077,0.8365,True,0.9700,192,40,7,experiments/transunet_ISIC_2016/metrics.json
+TransUNet,ISIC 2017,test,primary,0.8683,0.7843,0.9561,0.8967,False,0.8418,0.8683,True,0.9870,200,40,13,experiments/transunet_ISIC_2017/metrics.json
+TransUNet,ISIC 2018,test,primary,0.8259,0.7265,0.9259,0.7683,False,0.8929,0.8259,True,0.9315,392,40,10,experiments/transunet_ISIC_2018/metrics.json
+MAFF-Net (Paper-faithful Recon.),ISIC 2016,test,primary,0.8989,0.8264,0.9456,0.8884,False,0.9096,0.8989,True,0.9591,192,n/r,37,experiments/maffnet_original_ISIC2016_final/metrics.json
+MAFF-Net (Paper-faithful Recon.),ISIC 2017,test,primary,0.8734,0.7975,0.9588,0.8377,False,0.9123,0.8734,True,0.9681,200,n/r,38,experiments/maffnet_original_ISIC2017_final/metrics.json
+MAFF-Net (Paper-faithful Recon.),ISIC 2018,test,primary,0.8655,0.7855,0.9514,0.8535,False,0.8779,0.8655,True,0.9730,392,n/r,35,experiments/maffnet_original_ISIC2018_final/metrics.json
+MAFF-Net (Restored),ISIC 2016,test,primary,0.9183,0.8555,0.9541,0.8963,False,0.9414,0.9183,True,0.9545,192,n/r,32,experiments/maffnet_ISIC2016_final/metrics.json
+MAFF-Net (Restored),ISIC 2017,test,primary,0.9116,0.8447,0.9700,0.9062,False,0.9171,0.9116,True,0.9807,200,n/r,25,experiments/maffnet_ISIC2017_final/metrics.json
+MAFF-Net (Restored),ISIC 2018,test,primary,0.8844,0.8080,0.9584,0.8719,False,0.8973,0.8844,True,0.9730,392,n/r,39,experiments/maffnet_ISIC2018_final/metrics.json
+MAFF-Net (Proposed),ISIC 2016,test,primary,0.9169,0.8517,0.9548,0.9118,False,0.9220,0.9169,True,0.9689,192,n/r,38,experiments/stabilized_maffnet_ISIC2016/metrics.json
+MAFF-Net (Proposed),ISIC 2017,test,primary,0.9096,0.8421,0.9682,0.9123,False,0.9069,0.9096,True,0.9842,200,n/r,31,experiments/stabilized_maffnet_ISIC2017/metrics.json
+MAFF-Net (Proposed),ISIC 2018,test,primary,0.8701,0.7900,0.9493,0.8669,False,0.8733,0.8701,True,0.9768,392,n/r,32,experiments/stabilized_maffnet_ISIC2018/metrics.json
+Attention U-Net,ISIC 2016,test,supplementary,0.8466,0.7443,0.9178,0.8173,False,0.8780,0.8466,True,0.9495,192,40,21,experiments/attn_unet_ISIC_2016/metrics.json
+Attention U-Net,ISIC 2017,test,supplementary,0.8097,0.7159,0.9331,0.7974,False,0.8223,0.8097,True,0.9737,200,40,16,experiments/attn_unet_ISIC_2017/metrics.json
+Attention U-Net,ISIC 2018,test,supplementary,0.7662,0.6641,0.9207,0.7078,False,0.8352,0.7662,True,0.9497,392,40,26,experiments/attention_unet_ISIC2018_final/metrics.json
+UNet++,ISIC 2016,test,supplementary,0.8141,0.7140,0.9055,0.8292,False,0.7996,0.8141,True,0.9647,192,40,25,experiments/unetpp_ISIC_2016/metrics.json
+UNet++,ISIC 2017,test,supplementary,0.7884,0.6959,0.9291,0.7996,False,0.7776,0.7884,True,0.9784,200,40,33,experiments/unetpp_ISIC_2017/metrics.json
+UNet++,ISIC 2018,test,supplementary,0.6978,0.5878,0.8912,0.6384,False,0.7692,0.6978,True,0.9298,392,40,9,experiments/unetpp_ISIC_2018/metrics.json

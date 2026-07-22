@@ -1,0 +1,103 @@
+================================================================================
+TEST EVALUATION REPORT — Paper 2  (Execution Step 2 of 13_Results_Completion_Plan)
+Lead Experiment Execution Engineer
+================================================================================
+Task    : evaluate the 9 canonical MAFF-Net checkpoints on the held-out TEST split
+          and emit canonical TEST metrics.json.
+Method  : MAFFNetTrainer.evaluate(test_loader, checkpoint=...) exactly as verified
+          in 14_Checkpoint_Verification.txt. Evaluation only — no training, no
+          fine-tuning, no code modified.
+Hardware: NVIDIA RTX 2000 Ada Generation; Python 3.10.20, torch 2.7.1+cu118.
+Data    : dataset_split/<DATASET>/test.csv, SegDataset(split="test"), img_size 384,
+          batch_size 2, no augmentation on the test split.
+Safety  : trainer constructed with save_dir="scratch_eval" so that the shared
+          checkpoints/training_log.csv was NOT overwritten; summary.csv files were
+          never written (verified intact, 24 lines each).
+================================================================================
+
+
+1. EXECUTION RESULT — 9 / 9 SUCCESSFUL
+--------------------------------------------------------------------------------
+Model (paper term)              Dataset    n_test  Test Dice  Ckpt epoch  Ckpt val Dice
+------------------------------  ---------  ------  ---------  ----------  -------------
+Proposed MAFF-Net               ISIC_2016    192     0.9169       38         0.93267
+  (stabilized_maffnet)          ISIC_2017    200     0.9096       31         0.91080
+                                ISIC_2018    392     0.8701       32         0.87795
+Restored MAFF-Net               ISIC_2016    192     0.9183       32         0.93668
+  (maffnet)                     ISIC_2017    200     0.9116       25         0.91505
+                                ISIC_2018    392     0.8844       39         0.88755
+Paper-faithful Reconstruction   ISIC_2016    192     0.8989       37         0.91305
+  (maffnet_original_            ISIC_2017    200     0.8734       38         0.88842
+   reconstructed)               ISIC_2018    392     0.8655       35         0.86926
+
+Background job exit code: 0.  Failed evaluations: NONE.
+
+
+2. GENERATED ARTIFACTS
+--------------------------------------------------------------------------------
+experiments/stabilized_maffnet_ISIC2016/metrics.json
+experiments/stabilized_maffnet_ISIC2017/metrics.json
+experiments/stabilized_maffnet_ISIC2018/metrics.json
+experiments/maffnet_ISIC2016_final/metrics.json
+experiments/maffnet_ISIC2017_final/metrics.json
+experiments/maffnet_ISIC2018_final/metrics.json
+experiments/maffnet_original_ISIC2016_final/metrics.json
+experiments/maffnet_original_ISIC2017_final/metrics.json
+experiments/maffnet_original_ISIC2018_final/metrics.json
+
+Schema written (per file):
+  model, dataset, split="test",
+  accuracy, dice, miou, sensitivity, specificity, f1        (flat, as requested)
+  test { acc, dice, mIoU, sensitivity, specificity, f1 }    (baseline-compatible
+                                                             block for
+                                                             utils/aggregate_benchmark.py)
+  n_test_images, checkpoint, checkpoint_epoch, checkpoint_val_dice,
+  config { model, dataset, data_root, img_size, batch_size, exp, eval_only:true }
+
+Note: MAFFNetTrainer.evaluate() returns only the six metrics; it does not compute a
+loss, so the baseline field "test_loss" is intentionally absent (not fabricated).
+The pre-existing summary.csv in each run directory still holds the VALIDATION
+metrics and was left untouched, so validation and test results remain separable.
+
+
+3. POST-EVALUATION VERIFICATION (all 9 runs)
+--------------------------------------------------------------------------------
+  metrics.json exists        : 9/9  YES
+  JSON readable              : 9/9  OK
+  required fields present    : 9/9  OK  (model, dataset, split, accuracy, dice,
+                                          miou, sensitivity, specificity, f1)
+  NaN / Inf values           : 0/9  none
+  split field == "test"      : 9/9  OK
+  model field matches run    : 9/9  OK
+  failed evaluations         : 0
+  => VERIFIED OK: 9/9, FAILED: 0
+
+
+4. OBSERVATIONS (recorded, no action taken)
+--------------------------------------------------------------------------------
+- Test Dice is consistently slightly below the checkpoint's validation Dice for
+  every run (e.g. Proposed ISIC2016: test 0.9169 vs val 0.9327), which is the
+  expected direction when the checkpoint was selected on validation.
+- The Paper-faithful runs were evaluated with the placeholder encoder, consistent
+  with their checkpoints (Major finding recorded in 14_Checkpoint_Verification.txt
+  §3). Their test numbers must be labelled accordingly if reported.
+- Blocker B1 from 13_Results_Completion_Plan (Critical: proposed reported on
+  validation only) is now RESOLVED — Proposed, Restored, and Paper-faithful all
+  have TEST metrics on the same split as the baselines.
+
+
+5. STATUS
+--------------------------------------------------------------------------------
+Successful evaluations : 9 / 9
+Failed evaluations     : 0
+Ready for performance table : YES, for the three MAFF-Net models. The full
+  baseline-vs-proposed table still requires the remaining plan steps:
+  Step 3 (U-Net ISIC 2017 test metrics.json — missing),
+  Step 4 (TransUNet ISIC 2018 re-run — previous run Dice 0.0000),
+  Step 6 (regenerate the performance table from canonical metrics.json).
+=> TEST EVALUATION: PASS
+
+--------------------------------------------------------------------------------
+No training, no fine-tuning, no code modification, no summary.csv overwritten.
+Aggregation deliberately NOT performed (out of scope for this step).
+================================================================================

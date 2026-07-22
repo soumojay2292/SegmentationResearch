@@ -1,0 +1,176 @@
+================================================================================
+EXPERIMENT ASSET INVENTORY — Paper 2
+Lead Experimental Evidence Auditor
+================================================================================
+Source of truth : repository experiments/ (PRIMARY). No code/outputs modified.
+Method          : scanned every experiments/<dir> for config.txt (model,dataset)
+                  and artifacts (summary.csv, metrics.json, model.pth, checkpoints/,
+                  loss_curve.png, iou_curve.png, samples/); Dice read from
+                  summary.csv (val) or metrics.json (test).
+Metric-split rule (from Experimental Pipeline Audit 11):
+  - summary.csv  = VALIDATION metrics  (MAFFNetTrainer: MAFF-Net family).
+  - metrics.json = TEST metrics        (SimpleTrainer: baselines).
+================================================================================
+
+
+A. CANONICAL RUNS (the runs intended for the paper)
+--------------------------------------------------------------------------------
+Model (paper term)            Dataset  Run dir                          Split  Dice
+-----------------------------  -------  -------------------------------  -----  ------
+Proposed MAFF-Net             2016     stabilized_maffnet_ISIC2016      VAL    0.9316
+  (stabilized_maffnet)        2017     stabilized_maffnet_ISIC2017      VAL    0.9101
+                              2018     stabilized_maffnet_ISIC2018      VAL    0.8688
+Restored MAFF-Net             2016     maffnet_ISIC2016_final           VAL    0.9345
+  (maffnet)                   2017     maffnet_ISIC2017_final           VAL    0.9107
+                              2018     maffnet_ISIC2018_final           VAL    0.8866
+Paper-faithful Reconstruction 2016     maffnet_original_ISIC2016_final  VAL    0.9124
+  (maffnet_original_          2017     maffnet_original_ISIC2017_final  VAL    0.8868
+   reconstructed)             2018     maffnet_original_ISIC2018_final  VAL    0.8643
+U-Net                         2016     unet_ISIC_2016                   TEST   0.8095
+                              2017     (no metrics.json — MISSING)      TEST   ---
+                              2018     unet_ISIC_2018                   TEST   0.6805
+Attention U-Net               2016     attn_unet_ISIC_2016              TEST   0.8133
+                              2017     attn_unet_ISIC_2017              TEST   0.7649
+                              2018     attention_unet_ISIC2018_final    TEST   0.7605
+UNet++                        2016     unetpp_ISIC_2016                 TEST   0.8287
+                              2017     unetpp_ISIC_2017                 TEST   0.7135
+                              2018     unetpp_ISIC_2018                 TEST   0.6383
+TransUNet                     2016     transunet_ISIC_2016              TEST   0.6028
+                              2017     transunet_ISIC_2017              TEST   0.3047
+                              2018     transunet_ISIC_2018              TEST   0.0000 (FAILED)
+
+Per-canonical-run artifacts (verified present):
+  Proposed / Restored: summary.csv, model.pth, checkpoints/, loss_curve.png,
+      iou_curve.png, samples/  (complete).
+  Paper-faithful: summary.csv, model.pth, loss_curve.png, iou_curve.png, samples/
+      (NO checkpoints/ subdir — only best model.pth).
+  Baselines: metrics.json, model.pth, samples/  (NO loss_curve.png / iou_curve.png).
+
+
+B. METRIC INVENTORY (what is actually available)
+--------------------------------------------------------------------------------
+From compute_metrics (trainer.py:212-242), per canonical run:
+  Available: Accuracy, Dice, mIoU, Sensitivity, Specificity, F1, val_loss,
+             best_dice  (F1 == Dice for binary masks).
+  summary.csv (MAFF-Net family) carries all of the above on the VALIDATION split.
+  metrics.json (baselines) carries acc/dice/mIoU/sens/spec/f1 on the TEST split.
+  Best-Epoch: NOT reliably available per run (training_log.csv is written to the
+     shared save_dir `checkpoints/` and overwritten across runs; only best_dice is
+     stored per run). => "Best Epoch" [NOT reliably available].
+
+
+C. FIGURE INVENTORY (existing artifacts)
+--------------------------------------------------------------------------------
+Present:
+  - Loss curves (loss_curve.png)  — MAFF-Net family canonical runs.
+  - Dice/IoU curves (iou_curve.png) — MAFF-Net family canonical runs.
+  - Prediction examples (samples/: input_*, gt_*, pred_* PNGs) — nearly all runs
+    including baselines.
+  - Per-run report.html (generate_report) — MAFF-Net family runs.
+Absent (NOT in repository):
+  - Overall architecture / Frequency Branch / Gated Fusion / Feature Alignment /
+    Boundary-supervision schematics (author-drawn PDFs [TBD]).
+  - Assembled multi-method qualitative-comparison figure.
+  - Boundary visualizations, attention maps, feature maps.
+
+
+D. TABLE INVENTORY (producible now vs not)
+--------------------------------------------------------------------------------
+  Dataset statistics            : READY (splits verified, audit 11).
+  Implementation configuration  : READY (config.txt + trainer defaults).
+  Training statistics (best val Dice / loss) : READY for MAFF-Net family
+                                  (summary.csv); partial for baselines.
+  Performance comparison        : NOT VALID as-is (see Section E; proposed=VAL,
+                                  baselines=TEST) + baseline gaps/corruption.
+  Baseline comparison (test)    : PARTIAL (U-Net 2017 missing; TransUNet 2018 = 0).
+  Ablation (components/cutoff/BcDS) : NOT READY (no ablation runs; placeholders
+                                  in paper/tables/ablation_tables.*).
+
+
+E. RESULT COMPARABILITY
+--------------------------------------------------------------------------------
+  - Proposed / Restored / Paper-faithful report VALIDATION metrics (summary.csv,
+    no metrics.json).
+  - Baselines report TEST metrics (metrics.json).
+  => Proposed-vs-baselines comparison is NOT scientifically valid (val != test).
+  - Proposed vs Restored vs Paper-faithful: all VALIDATION -> mutually comparable.
+  - Baselines vs baselines: TEST -> comparable, but incomplete (U-Net 2017 absent,
+    TransUNet 2018 = 0.0000).
+  - PROVENANCE MISMATCH: baseline TEST Dice in metrics.json do NOT match the values
+    tabulated in paper/tables/performance_tables.md (e.g., U-Net 2016 metrics.json
+    0.8095 vs table 0.7874; Attn U-Net 2016 0.8133 vs table 0.8466; TransUNet 2016
+    0.6028 vs table 0.8365). The performance-table baseline provenance cannot be
+    reproduced from the current canonical metrics.json and must be reconciled.
+
+
+F. CHECKPOINT INVENTORY
+--------------------------------------------------------------------------------
+  Best checkpoints (model.pth): present for ALL canonical runs.
+  Per-epoch checkpoints (checkpoints/): present for Proposed, Restored, and baseline
+     canonical runs; ABSENT for Paper-faithful (best model.pth only).
+  Missing/failed checkpoints: transunet_ISIC_2018 has model.pth but its metrics.json
+     Dice = 0.0000 (failed run); unet ISIC 2017 has no test metrics.json.
+  Load compatibility: [NOT VERIFIED] — load_state_dict of these checkpoints into the
+     current model code was not run here (carried caveat, PUBLICATION_ENGINEERING_
+     REFERENCE §6): C5 grouping + adapter prefix may block loading.
+
+
+G. MISSING / INCOMPLETE / CORRUPTED / DUPLICATED / UNUSED
+--------------------------------------------------------------------------------
+Missing:
+  - Proposed/Restored/Paper-faithful TEST-set metrics (metrics.json) — none exist.
+  - U-Net ISIC 2017 TEST metrics.json.
+  - All ablation experiments (component, cutoff, BcDS on/off).
+  - Architecture / qualitative-comparison / boundary figures.
+Incomplete / failed:
+  - transunet_ISIC_2018 metrics.json Dice = 0.0000 (failed test run).
+  - boundary_stable: empty dir (no summary/model).
+  - Dated `*_2026-04-28_15-19-03` unet runs: summary Dice = 0.0000 (failed).
+Duplicated:
+  - Multiple runs per model x dataset (e.g., maffnet_ISIC_2016 vs
+    maffnet_ISIC2016_final vs maffnet_ISIC_2016_2026...; attn/transunet/unet/unetpp
+    dated variants). Canonical set defined in Section A; the rest are supersedes.
+Unused / development (not for paper):
+  - baseline_test, boundary_25/refined/test/stable, sanity_*, *_smoke, *_initcheck,
+    integration_test, experiment, final_baseline, maffnet_ISIC_20xx (pre-fix, Dice
+    0.29-0.41). These are debug/smoke runs (low or partial Dice).
+
+
+H. RESULTS READINESS
+--------------------------------------------------------------------------------
+CLASSIFICATION: NOT READY.
+
+Exact missing artifacts required before Experimental Setup / Results can be written
+as a valid comparison:
+  1. TEST-set evaluation of Proposed MAFF-Net (and Restored, Paper-faithful) so that
+     the proposed row is comparable to the TEST-set baselines (currently VAL-only).
+  2. Ablation experiments (component add-in, cutoff sweep, BcDS on/off) — none exist.
+  3. U-Net ISIC 2017 TEST metrics.json (missing).
+  4. Re-run TransUNet ISIC 2018 (metrics.json Dice = 0.0000, failed).
+  5. Reconcile baseline TEST values with paper/tables/performance_tables (provenance
+     mismatch; current metrics.json do not reproduce the tabulated baseline numbers).
+  6. (Optional) multi-seed runs — all current runs are single-run.
+  7. Produce architecture / qualitative-comparison / ablation / boundary figures.
+
+READY now (do not require new runs):
+  - Dataset statistics table; implementation-configuration table; training curves
+    (loss/IoU) and qualitative sample panels for the MAFF-Net family; per-model
+    validation training statistics for the MAFF-Net family.
+
+
+GOAL STATE
+--------------------------------------------------------------------------------
+[x] Every experiment inventoried
+[x] Every metric source verified
+[x] Every figure source identified
+[x] Every table source identified
+[x] Checkpoints verified (load-compatibility [NOT VERIFIED], noted)
+[x] Comparability verified
+[x] Missing assets documented
+[x] Results readiness determined
+=> GOAL STATE: PASS  (inventory complete; Results Readiness = NOT READY).
+
+--------------------------------------------------------------------------------
+No code, data, or experiment output modified. All findings trace to
+experiments/<dir> artifacts; unverifiable items marked [NOT VERIFIED]/[NOT RECORDED].
+================================================================================

@@ -1,0 +1,131 @@
+================================================================================
+TRANSUNET ISIC 2018 VERIFICATION — Paper 2
+(Pre-flight check for Step 4 of 13_Results_Completion_Plan)
+Lead Experiment Execution Engineer
+================================================================================
+Task   : determine whether Step 4 (retrain TransUNet on ISIC 2018) is actually
+         required, before any GPU time is spent.
+Scope  : verification only. Nothing retrained, nothing evaluated, no code, no
+         experiment folder, and no metrics modified.
+Result : Step 4 is NOT required. A valid, completed TransUNet ISIC 2018 run with
+         correct TEST metrics already exists.
+================================================================================
+
+
+1. SEARCH COVERAGE
+--------------------------------------------------------------------------------
+All directories matching *transunet* (case-insensitive) were enumerated across the
+repository. Ten exist, all under experiments/; none outside it; no backup/archive
+directory contains TransUNet runs (paper2/archive is empty).
+TransUNet ISIC 2018 candidates found: 3.
+
+
+2. CANDIDATE INVENTORY (all 3 ISIC 2018 runs)
+--------------------------------------------------------------------------------
+C1  experiments/transunet_ISIC_2018                       [dir mtime 2026-06-20 22:01]
+    config.txt      : model=transunet, dataset=ISIC_2018, epochs=40, bs=2,
+                      img_size=384, lr=0.001
+    model.pth       : 1214 MB (mtime 2026-06-21 23:47)
+    checkpoints/    : 22 files incl. best_transunet.pth
+    summary.csv     : dice 0.0000, mIoU 0.0000, acc 0.7891, val_loss 44.6181,
+                      best_dice 0.8285      <-- FINAL-EPOCH VALIDATION (diverged)
+    metrics.json    : PRESENT and VALID
+                      best_epoch=10, epochs_run=40, early_stopped=True
+                      TEST : dice 0.825937, mIoU 0.726465, acc 0.925888,
+                             sensitivity 0.892938, specificity 0.931508
+                      VAL  : dice 0.828484, mIoU 0.728335, acc 0.927591
+    training_log    : 20 epochs logged; last epoch val_dice 0.0000, val_loss 44.6181
+    verdict         : COMPLETED AND VALID. Training diverged after the best epoch,
+                      but early stopping retained the epoch-10 best checkpoint, and
+                      the TEST evaluation was performed from that checkpoint.
+
+C2  experiments/transunet_ISIC_2018_2026-04-28_15-08-24    [dir mtime 2026-04-28 15:08]
+    contents        : checkpoints/ only (training_log.csv with 0 epochs logged)
+    config/model/summary/metrics : ALL ABSENT
+    verdict         : ABORTED / EMPTY. Unusable.
+
+C3  experiments/transunet_ISIC_2018_2026-04-28_15-19-03    [dir mtime 2026-04-30 07:59]
+    config.txt      : ABSENT
+    model.pth       : 5 MB  <-- ~240x smaller than C1 (1214 MB)
+    checkpoints/    : 22 files incl. best_transunet.pth
+    summary.csv     : dice 0.8716, mIoU 0.7903, acc 0.9504, best_dice 0.8716,
+                      epochs 20            <-- VALIDATION, not test
+    metrics.json    : ABSENT (no test evaluation was ever run)
+    verdict         : NOT COMPARABLE. The 5 MB checkpoint indicates the legacy
+                      TransUNet implementation (models/transunet_legacy.py, superseded
+                      by the official R50+ViT-B/16 migration), not the canonical
+                      model. It also lacks config.txt and any TEST metrics, and ran
+                      only 20 epochs. It must NOT replace C1.
+
+
+3. CORRECTION OF TWO EARLIER AUDIT FINDINGS (important)
+--------------------------------------------------------------------------------
+Audit 12 (12_Experiment_Asset_Inventory.txt) recorded two findings that this
+verification shows to be INCORRECT. Both originated from the same scanning error:
+the audit-12 scanner read the Dice value from summary.csv when present, and only
+fell back to metrics.json. summary.csv stores FINAL-EPOCH VALIDATION metrics, not
+test metrics.
+
+  ERRATUM 1 — "TransUNet ISIC 2018 metrics.json Dice = 0.0000 (failed run)"
+    FALSE. metrics.json TEST dice = 0.825937. The 0.0000 is summary.csv's
+    final-epoch validation Dice after late-training divergence. The run is valid.
+
+  ERRATUM 2 — "Baseline provenance mismatch: experiments/*/metrics.json do not
+               reproduce paper/tables/performance_tables.md"
+    FALSE. Direct comparison of all 10 tabulated baseline values against
+    metrics.json["test"]["dice"] gives an EXACT match in every case:
+
+      run                     table    metrics.json TEST   match   summary.csv(val)
+      unet_ISIC_2016          0.7874        0.7874          YES        0.8095
+      unet_ISIC_2018          0.6866        0.6866          YES        0.6805
+      attn_unet_ISIC_2016     0.8466        0.8466          YES        0.8133
+      attn_unet_ISIC_2017     0.8097        0.8097          YES        0.7649
+      unetpp_ISIC_2016        0.8141        0.8141          YES        0.8287
+      unetpp_ISIC_2017        0.7884        0.7884          YES        0.7135
+      unetpp_ISIC_2018        0.6978        0.6978          YES        0.6383
+      transunet_ISIC_2016     0.8365        0.8365          YES        0.6028
+      transunet_ISIC_2017     0.8683        0.8683          YES        0.3047
+      transunet_ISIC_2018     0.8259        0.8259          YES        0.0000
+
+    The performance table's baseline provenance was correct all along; the audit-12
+    mismatch claim is withdrawn.
+
+Consequences for 13_Results_Completion_Plan:
+  - Step 4 (retrain TransUNet ISIC 2018)  -> REMOVE. Not required.
+  - Blocker B3                            -> CLOSED as a non-issue.
+  - Step 6 (regenerate performance table) -> reduced in scope: the provenance
+    reconciliation is already satisfied; Step 6 now only needs to ADD the newly
+    produced rows (the nine MAFF-Net TEST results from Step 2 and the U-Net
+    ISIC 2017 TEST result from Step 3) to the existing, verified baseline table.
+  - Estimated GPU time saved: ~3-5 GPU-h (the entire Step-4 retrain).
+
+
+4. BEST AVAILABLE RUN
+--------------------------------------------------------------------------------
+BEST = experiments/transunet_ISIC_2018  (candidate C1)
+Reasons: it is the only ISIC 2018 TransUNet run that (a) uses the canonical official
+TransUNet checkpoint size/architecture, (b) has a config.txt, (c) completed with
+early stopping and a retained best checkpoint (epoch 10), and (d) already carries a
+valid TEST metrics.json (Dice 0.825937) that matches the published table row.
+No newer successful run supersedes it. The canonical selection is unchanged.
+
+
+5. OBSERVATION (recorded, no action taken)
+--------------------------------------------------------------------------------
+The canonical run's training diverged after epoch 10 (final validation loss 44.6181,
+validation Dice 0.0000). Best-checkpoint selection isolated the paper results from
+that divergence, so the reported TEST metrics are unaffected. If the training curve
+for this run is ever shown as a figure, the late-training divergence will be visible
+and should be explained (or the curve truncated at the best epoch, with disclosure).
+
+
+6. STATUS
+--------------------------------------------------------------------------------
+TransUNet ISIC 2018 runs found : 3  (1 valid, 1 aborted/empty, 1 legacy without test)
+Retraining required            : NO
+Step 4                         : CAN BE SKIPPED / REMOVED FROM THE PLAN
+=> TRANSUNET VERIFICATION: PASS
+
+--------------------------------------------------------------------------------
+No retraining, no evaluation, no experiment folder created or modified.
+================================================================================

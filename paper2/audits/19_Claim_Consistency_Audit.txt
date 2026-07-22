@@ -1,0 +1,407 @@
+================================================================================
+CLAIM CONSISTENCY AUDIT — Paper 2   (FINAL REVIEW LOOP 1)
+Lead Scientific Reviewer / Reviewer #2 simulation
+================================================================================
+Method  : every claim treated as false until repository evidence proves it.
+Scope   : audit only. No manuscript text written, no wording improved, no code or
+          experiment touched. Sources inspected: paper2/manuscript/,
+          paper2/audits/11-18, paper2/results/, paper/sections/, paper/tables/,
+          paper/figures/, experiments/*/metrics.json, experiments/*/config.txt,
+          models/, modules/, training/, train.py.
+Verdict : NEEDS REVISION.
+          Supported 27 | Not supported 12 | Needing weaker wording 9.
+          Publication readiness: NEEDS MANUSCRIPT CHANGES.
+================================================================================
+
+
+0. THE SINGLE MOST IMPORTANT FINDING
+--------------------------------------------------------------------------------
+The paper's entire scientific framing is BOUNDARY FIDELITY. Section III-A, III-D
+and III-H all rest on it: "must recover lesion boundaries faithfully",
+"boundary-aware spectral representation", "Boundary-centric Dual Supervision".
+
+NO BOUNDARY METRIC IS COMPUTED ANYWHERE IN THE REPOSITORY.
+
+training/trainer.py::compute_metrics returns exactly six values — acc, dice, mIoU,
+sensitivity, specificity, f1. There is no Hausdorff distance, no HD95, no
+Boundary-IoU, no boundary-F1, no ASSD. Every quantitative result in the repository
+is a REGION-OVERLAP measure. paper/tables/ablation_tables.md line 41 already
+concedes this: "Add a boundary-specific metric (e.g., HD95 / Boundary-IoU) to
+support boundary claims; not yet computed by the metric code."
+
+Consequence: the paper proposes boundary-targeted machinery (Frequency Branch,
+BDS, EWR) and then measures only region overlap. A Q1 reviewer will ask, in the
+first paragraph of their report, why a boundary contribution is never evaluated
+with a boundary metric. Region metrics are precisely the measure that Section III-H
+argues is "comparatively insensitive to errors that are confined to the boundary" —
+the manuscript itself explains why its own evidence is inadequate for its own claim.
+
+This is fixable WITHOUT retraining: HD95 and Boundary-IoU can be computed from the
+existing 21 canonical checkpoints in one evaluation pass. It is the highest-value
+outstanding experiment in the project.
+
+
+1. SUPPORTED CLAIMS (27)
+--------------------------------------------------------------------------------
+Verified line-by-line against the implementation. These may stand as written.
+
+ARCHITECTURE — backbone
+  S1  SAM2 image encoder used as a frozen feature extractor and not modified.
+      models/maffnet.py:230 and :275 call p.requires_grad_(False); stabilized_
+      maffnet.py imports SAM2Encoder unchanged.                      [III-C]
+  S2  Backbone is hierarchical, supplying 4 multi-scale features.
+      forward() unpacks f1,f2,f3,f4 from self.backbone(x_norm).      [III-C]
+  S3  Trainable capacity lies entirely downstream of the backbone.   [III-C]
+
+ARCHITECTURE — Frequency Branch
+  S4  Parameter-free. modules/frequency_branch.py declares no nn.Parameter; the
+      radial mask is a cached constant tensor.                       [III-D]
+  S5  FFT -> radial high-pass -> inverse FFT. rfft2(x.float(), norm="ortho") ->
+      mask (r >= cutoff) -> irfft2.                                  [III-D]
+  S6  Cutoff is a fixed hyperparameter, not learned. self.cutoff = float(cutoff),
+      default 0.1; StabilizedMAFFNet(cutoff=0.1).                    [III-D]
+  S7  Spatial resolution preserved. irfft2(..., s=(H, W)).           [III-D]
+  S8  Instantiated independently per encoder scale.
+      nn.ModuleList([FrequencyBranch(cutoff) for _ in chans]).       [III-D]
+
+ARCHITECTURE — Feature Alignment
+  S9  Sequence is InstanceNorm -> 1x1 Conv -> ReLU. Verified verbatim in
+      modules/feature_alignment.py::forward.                          [III-E]
+  S10 The normalisation introduces no learnable parameters. affine defaults to
+      False and StabilizedMAFFNet calls FeatureAlignment(c, c).       [III-E]
+  S11 Learnable content confined to the 1x1 projection.               [III-E]
+  S12 Instantiated separately per stream per scale with its own parameters.
+      align_s and align_f are two distinct ModuleLists.               [III-E]
+
+ARCHITECTURE — Gated Fusion
+  S13 g = sigmoid(Conv1x1([F_s || F_f])). Verified verbatim.          [III-F]
+  S14 Output is a convex combination g*F_s + (1-g)*F_f, bounded by its inputs.
+                                                                      [III-F]
+  S15 No attention mechanism. Single nn.Conv2d(2C, C, 1); no MultiheadAttention
+      anywhere in modules/.                                           [III-F]
+  S16 Gate varies across channels AND spatial positions (per-pixel 1x1 conv).
+                                                                      [III-F]
+
+ARCHITECTURE — decoder / reconstruction
+  S17 DecoderBlock, RDB and ConvBNReLU are reused unchanged from models.maffnet
+      (direct import, no subclassing, no redefinition).               [III-A/III-G]
+  S18 Projected 1x1 skip connections are an adaptation, not a contribution.
+      self.skip_proj = 3x nn.Conv2d(c, c, 1); III-G states this correctly.
+                                                                      [III-G]
+  S19 Deep supervision emits 4 predictions. head1..head4 -> p1..p4.   [III-G/III-I]
+
+TRAINING OBJECTIVE (all verified against training/trainer.py::MAFFNetLoss)
+  S20 Region term = Dice + BCE, averaged UNIFORMLY over the 4 heads (Eq. 3).
+      trainer.py:158 confirms the uniform mean.                       [III-I]
+  S21 ds_weights w = (1,1,1,0.01) apply ONLY to BDS, not to the region term.
+      trainer.py:171-176.                                             [III-I]
+  S22 Sobel edge operator with gradient magnitude clamped to [0,1] (Eq. 4a).
+                                                                      [III-I]
+  S23 Linear BDS warm-up over T_warm epochs (Eq. 5).                  [III-I]
+  S24 EWR weight map W = 1 + alpha*B(y); normalised weighted MSE (Eq. 6).
+                                                                      [III-I]
+  S25 Constants lambda_bds=0.05, lambda_ewr=0.05, omega=2, alpha=3, T_warm=5
+      match the MAFFNetLoss defaults exactly.                         [III-I]
+  S26 AdamW + linear LR decay to zero + gradient-norm clipping + mixed-precision
+      autocast.                                                       [III-I]
+  S27 Evaluation uses the best-validation-Dice checkpoint. Confirmed for all 9
+      MAFF-Net runs in 14_Checkpoint_Verification.                    [III-I]
+
+NOTE: the methodology sections (III-A ... III-I) are in good standing. Almost all
+of the risk in this paper sits in results assets that have not been written yet.
+
+
+2. UNSUPPORTED CLAIMS (12)
+--------------------------------------------------------------------------------
+Each must be removed, rewritten, or backed by a new experiment before submission.
+
+N1  "The proposed method achieves the best Dice." [RISK: CRITICAL]
+    EVIDENCE: paper2/results/final_benchmark_table.md. On the held-out test split
+    MAFF-Net (Restored) beats MAFF-Net (Proposed) on ALL THREE datasets:
+    0.9183>0.9169 (2016), 0.9116>0.9096 (2017), 0.8844>0.8701 (2018).
+    The proposed model is not the best model in its own family.
+    CORRECTION: do not claim best Dice. Either reposition around precision/
+    specificity (where Proposed wins consistently), or run multi-seed experiments
+    to establish whether the gap is real, or explicitly report Restored as the
+    stronger variant and justify Proposed on other grounds.
+
+N2  "State-of-the-art." [RISK: CRITICAL]
+    EVIDENCE: no comparison against any published result exists. The repository
+    implements four baselines (U-Net, Attention U-Net, UNet++, TransUNet), all
+    trained locally. SGT-Net and Swin-UNet — named in the synopsis — are NOT
+    implemented (Major finding M3, 11_Experimental_Pipeline_Audit). No external
+    leaderboard or published number is cited anywhere.
+    CORRECTION: delete every SOTA claim, or add a literature-comparison table
+    clearly marked as figures quoted from the original papers, not reproduced.
+
+N3  "Significantly improves / statistically superior." [RISK: CRITICAL]
+    EVIDENCE: no random seed is set anywhere in the training path. A repository-
+    wide grep for manual_seed/np.random.seed/random.seed/deterministic returns
+    only models/maffnet_original_reconstructed.py:692 (a self-test block) and a
+    comment in scripts/resplit_isic2017.py. Every number is a SINGLE RUN. No
+    variance, no confidence interval, no significance test exists.
+    CORRECTION: remove the word "significant" in its statistical sense entirely,
+    or add >=3 seeds per configuration (requires adding seed support first).
+
+N4  Any ablation-derived claim. [RISK: CRITICAL]
+    EVIDENCE: paper/tables/ablation_tables.md is explicitly "STRUCTURE ONLY — no
+    ablation experiments have been run"; every cell is a placeholder. Step 5 of
+    13_Results_Completion_Plan was never executed. There is no experiment isolating
+    the Frequency Branch, the Feature Alignment Module, or the Gated Fusion Module.
+    CORRECTION: the three architectural contributions currently have ZERO
+    experimental support for their individual value. Either run the ablation or
+    drop all per-module efficacy claims. (The tables are honest placeholders — no
+    values were invented. That is correct behaviour and must be preserved.)
+
+N5  "Better preserves lesion margins on diffuse and irregular boundaries."
+    (paper/figures/figure_captions.md, Fig. 7) [RISK: CRITICAL]
+    EVIDENCE: no boundary metric exists (see section 0). The claim is also visual-
+    only, and the referenced asset does not exist.
+    CORRECTION: remove, or support with HD95/Boundary-IoU.
+
+N6  BcDS efficacy. [RISK: HIGH]
+    EVIDENCE: no A/B/C/D ablation (Table VI is empty). BDS and EWR are always on
+    in every completed run. Their contribution is unmeasured, and the manuscript's
+    claim that they "sharpen boundary delineation" (III-H) has no evidence.
+    CORRECTION: III-H already describes BcDS as auxiliary — keep it descriptive,
+    and add no efficacy claim without the ablation.
+
+N7  Frequency-branch cutoff justification. [RISK: MEDIUM]
+    EVIDENCE: Table V (cutoff sensitivity) is empty. cutoff=0.1 is an unjustified
+    default; no experiment supports the choice.
+    CORRECTION: state it as a fixed design choice, or run the sensitivity study.
+
+N8  Reproducibility. [RISK: HIGH]
+    EVIDENCE: no seed, no determinism flags, no per-run hardware record, and
+    config.txt never records the --checkpoint argument for ANY run. train.py:188
+    writes the "backbone: SAM2 Hiera-Large" line only when model=="maffnet", so the
+    stabilized_maffnet runs have no backbone provenance at all. Two SAM2 weight
+    files exist (checkpoints/sam2.1_hiera_large.pt and sam2_hiera_large.pt) and the
+    repository does not record which was used.
+    MITIGATION ALREADY ESTABLISHED: StabilizedMAFFNet raises ValueError when both
+    encoder and checkpoint are None (stabilized_maffnet.py:53-54), so a real SAM2
+    checkpoint was necessarily supplied — the proposed runs are NOT placeholder-
+    encoder runs. Only the identity of the file is unrecorded.
+    CORRECTION: do not claim reproducibility. Disclose single-run, unseeded status.
+
+N9  paper/tables/performance_tables.md, Table II, U-Net Dice = 0.7613.
+    [RISK: HIGH — unsourceable number]
+    EVIDENCE: the canonical U-Net ISIC 2017 test Dice is 0.7229
+    (experiments/unet_final_2017/metrics.json, produced in Step 3). No metrics.json
+    anywhere in the repository contains 0.7613. That table predates the U-Net 2017
+    test evaluation, which is precisely why Step 3 existed. The value cannot be
+    traced to any artifact.
+    CORRECTION: this table is SUPERSEDED. Replace with
+    paper2/results/final_benchmark_table.md. Do not carry 0.7613 forward.
+
+N10 paper/tables/performance_tables.md, Table III, Attention U-Net = "—".
+    [RISK: MEDIUM]
+    EVIDENCE: experiments/attention_unet_ISIC2018_final/metrics.json exists and is
+    valid (test Dice 0.7662). The "incomplete" note is stale.
+    CORRECTION: superseded by the new benchmark table.
+
+N11 "The auxiliary reconstruction branch is omitted at inference." (III-A, III-B)
+    [RISK: MEDIUM]
+    EVIDENCE: StabilizedMAFFNet.forward always computes self.rdb(g4,g3,g2,g1) and
+    always returns rec as the 5th element; there is no train/eval gate. The output
+    is discarded by the evaluation code, not skipped by the model.
+    CORRECTION: say the reconstruction output is used only during training and
+    discarded at inference. Never claim an inference-time cost or latency saving
+    from omitting it — that saving does not exist in this implementation.
+
+N12 "The auxiliary reconstruction branch draws on the encoder-side features."
+    (III-B) [RISK: MEDIUM]
+    EVIDENCE: the call is self.rdb(g4, g3, g2, g1) — the FUSED representations, not
+    encoder features. III-G states this correctly ("operates on the same fused
+    multi-scale representations"), so the manuscript contradicts itself.
+    CORRECTION: align III-B to III-G. Fused, not encoder-side.
+
+
+3. CLAIMS NEEDING WEAKER WORDING (9)
+--------------------------------------------------------------------------------
+True as far as the evidence goes, but currently overstated or under-qualified.
+
+W1  "Outperforms all baselines." SUPPORTED IN SUBSTANCE but needs qualification.
+    The Proposed model does exceed all four baselines on Dice on all three
+    datasets (2016: 0.9169 vs best baseline 0.8466; 2017: 0.9096 vs 0.8683;
+    2018: 0.8701 vs 0.8259). Margins are large (+0.04 to +0.07) and unlikely to be
+    noise. But it is a single unseeded run.
+    => "consistently achieves higher Dice than all four baselines in a single-run
+    evaluation under an identical protocol". Not "significantly".
+
+W2  III-A "the frozen encoder, the convolutional decoder, and the auxiliary
+    reconstruction branch are preserved without alteration" vs III-G "adapted here
+    to consume the fused representations". The module CLASSES are imported
+    unchanged (S17), so III-A is defensible at the class level, but the two
+    sentences read as contradictory. => harmonise: components preserved, pathway
+    adapted.
+
+W3  Any margin below ~0.005 Dice. The Proposed-vs-Restored gaps on ISIC 2016
+    (0.0014) and 2017 (0.0020) are far inside plausible single-run variation.
+    => never characterise these as differences at all without seeds.
+
+W4  Paper-faithful Reconstruction rows. Those three runs used the PLACEHOLDER
+    encoder, not pretrained SAM2 (14_Checkpoint_Verification §3). => must be
+    labelled at every appearance; never presented as a reproduction of the
+    published MAFF-Net's reported performance.
+
+W5  "mIoU". compute_metrics computes foreground IoU = TP/(TP+FP+FN), not a mean
+    over classes. => report as IoU, or define explicitly on first use.
+
+W6  Reporting Dice and F1 as separate columns. They are identical by construction
+    (both 2TP/(2TP+FP+FN)); verified equal to 1e-12 in all 21 canonical files.
+    => disclose the identity or drop F1.
+
+W7  Precision. Not computed anywhere in the repository; the values in the
+    benchmark table are algebraically derived and approximate under batch-wise
+    averaging (18_Final_Benchmark_Table §F2). => keep the "derived" label or
+    recompute properly.
+
+W8  U-Net ISIC 2017 baseline. Trained 20 epochs; every other canonical run trained
+    40. => disclose, or the baseline looks deliberately weakened.
+
+W9  TransUNet ISIC 2018. Diverged after its best epoch (10); results come from the
+    retained best checkpoint and are valid. => do not plot that training curve
+    without explanation.
+
+
+4. CLAIMS REQUIRING NEW EXPERIMENTS
+--------------------------------------------------------------------------------
+Ordered by value per GPU-hour.
+
+E1  Boundary metrics (HD95 and/or Boundary-IoU) on the 21 existing checkpoints.
+    EVALUATION ONLY — NO RETRAINING. Unlocks the paper's central boundary claim,
+    which is currently unmeasured. HIGHEST PRIORITY. Est. <1 GPU-h.
+E2  Component ablation: base / +Frequency / +Alignment / +Gated Fusion.
+    4 training runs on one dataset. Without this the three architectural
+    contributions have no individual support. Est. 8-16 GPU-h.
+E3  Multi-seed (>=3) for the headline comparison. Requires adding seed support to
+    train.py first. Resolves N1 and N3 and the Proposed-vs-Restored question.
+    Est. 2x-3x the headline runs.
+E4  BcDS ablation A/B/C/D (Table VI). 4 runs. Needed only if BcDS is claimed as a
+    contribution rather than described as auxiliary.
+E5  Cutoff sensitivity (Table V). 4 runs. Lowest priority; a fixed design choice
+    is acceptable if declared as such.
+E6  Figure assets. Figures/ DOES NOT EXIST — Fig. 1, 2, 3, 7 and 8 have no source
+    file. Fig. 4 (loss_curve.png), Fig. 5 (iou_curve.png) and Fig. 6 (samples/)
+    DO exist under experiments/stabilized_maffnet_ISIC2016/. Fig. 8 additionally
+    cannot be produced until E2 is run.
+
+
+5. METRICS TO KEEP
+--------------------------------------------------------------------------------
+  Dice          MEASURED. Primary metric. Keep.
+  IoU           MEASURED (foreground IoU). Keep, renamed from "mIoU".
+  Accuracy      MEASURED. Keep, but note it is inflated by background dominance
+                in this task and carries little discriminative information.
+  Sensitivity   MEASURED (= Recall, TP/(TP+FN)). Keep. Report under ONE name.
+  Specificity   MEASURED. Keep — it is where the Proposed model's advantage over
+                the Restored variant actually shows.
+  HD95 /        NOT YET COMPUTED. Should be ADDED (E1). Required to support the
+  Boundary-IoU  boundary-centric framing.
+
+6. METRICS TO REMOVE
+--------------------------------------------------------------------------------
+  F1            REMOVE. Identical to Dice by construction; presenting both implies
+                two independent measurements and will be challenged.
+  Precision     REMOVE, or recompute properly. Not measured anywhere; currently
+                derived via P = 1/(2/Dice - 1/Recall), which is exact per batch but
+                approximate on the batch-averaged values actually stored.
+  "Recall" AND  REMOVE ONE. Sensitivity and Recall are the same quantity; listing
+  "Sensitivity" both inflates the apparent breadth of the evaluation.
+
+
+7. REVIEWER #2 CONCERNS (verbatim challenges I would file)
+--------------------------------------------------------------------------------
+R1  "The paper proposes three boundary-oriented mechanisms and evaluates none of
+     them with a boundary metric." -> section 0. RISK: CRITICAL. Likely reject.
+R2  "Table IV/V/VI are empty. No ablation supports the claimed contributions."
+     -> N4. RISK: CRITICAL.
+R3  "All results are single-run with no seed. On what basis is any difference
+     claimed?" -> N3. RISK: CRITICAL.
+R4  "Your own restored variant outperforms your proposed model on all three
+     datasets. Why is the weaker model the contribution?" -> N1. RISK: CRITICAL.
+     This is the question the authors must have an answer to before submission.
+R5  "Dice and F1 are identical in every row of your table." -> W6. RISK: HIGH.
+     Trivially checkable by any reader and immediately damages credibility.
+R6  "How is Precision obtained? Your stated metric set does not include it."
+     -> W7. RISK: HIGH.
+R7  "The U-Net baseline on ISIC 2017 was trained for half as many epochs as every
+     other model." -> W8. RISK: HIGH. Reads as a weakened baseline.
+R8  "SGT-Net and Swin-UNet are discussed but never compared against." -> N2.
+     RISK: HIGH.
+R9  "Which SAM2 checkpoint was used? Two are present in the repository and no run
+     records the choice." -> N8. RISK: MEDIUM.
+R10 "Section III-B says the reconstruction branch consumes encoder features;
+     III-G says it consumes fused features. Which is it?" -> N12. RISK: MEDIUM.
+R11 "You claim the reconstruction branch is omitted at inference, but the forward
+     pass always computes it." -> N11. RISK: MEDIUM.
+R12 "'mIoU' is a foreground IoU, not a mean over classes." -> W5. RISK: LOW.
+
+
+8. REQUIRED MANUSCRIPT EDITS
+--------------------------------------------------------------------------------
+BLOCKING (must be done before any submission)
+  B1  Delete every "best Dice", "state-of-the-art" and "significantly" claim
+      (N1, N2, N3), or supply the experiments that would support them.
+  B2  Resolve the Proposed-vs-Restored positioning (N1). This is an author
+      decision and cannot be settled from the data as it stands.
+  B3  Retire paper/tables/performance_tables.md. It contains an unsourceable
+      U-Net 2017 value (0.7613), a stale "—" for Attention U-Net 2018, and
+      validation metrics for the proposed model. Supersede with
+      paper2/results/final_benchmark_table.md.
+  B4  Drop the F1 column; label or drop Precision; rename mIoU to IoU (W5-W7).
+  B5  Add a Limitations paragraph disclosing: single run, no seed, no boundary
+      metric, no ablation, unrecorded SAM2 checkpoint identity.
+  B6  Fix III-B: reconstruction branch consumes FUSED features (N12).
+  B7  Fix III-A/III-B: the reconstruction output is discarded at inference, not
+      omitted from computation (N11).
+
+REQUIRED BEFORE THE RESULTS SECTION IS WRITTEN
+  B8  Run E1 (boundary metrics) — otherwise Sections V-VI cannot substantiate the
+      thesis established in Section III.
+  B9  Either run E2 (ablation) or remove Tables IV-VI and Fig. 8 and every claim
+      that the three modules individually contribute.
+  B10 Disclose the U-Net 2017 epoch asymmetry (W8) and the TransUNet 2018
+      divergence (W9) in the experimental-setup section.
+  B11 Label the Paper-faithful Reconstruction rows as placeholder-encoder (W4).
+
+EDITORIAL
+  B12 Harmonise III-A and III-G on "preserved" vs "adapted" (W2).
+  B13 Fig. 7 caption: remove the unmeasured boundary-superiority claim (N5).
+  B14 Create Figures/ and produce Fig. 1, 2, 3 (author-drawn); Fig. 7 requires a
+      qualitative comparison panel; Fig. 8 requires E2 (E6).
+
+
+9. OVERALL PUBLICATION READINESS
+--------------------------------------------------------------------------------
+Methodology (III-A ... III-I)          STRONG. 27/27 architecture and objective
+                                       claims verified against the implementation.
+                                       Terminology discipline is good; the paper
+                                       correctly declines to claim the encoder,
+                                       decoder and RDB as contributions.
+Results infrastructure                 SOLID. All benchmark values are held-out
+                                       test metrics from canonical metrics.json,
+                                       one canonical run per model per dataset.
+Evidence for the central thesis        INSUFFICIENT. The boundary claim is
+                                       unmeasured; the module contributions are
+                                       un-ablated; the headline comparison is
+                                       single-run and is lost to the authors' own
+                                       Restored variant.
+Legacy result assets                   STALE AND PARTLY UNSOURCEABLE. Must be
+                                       retired (B3).
+
+=> CLAIM CONSISTENCY AUDIT: NEEDS REVISION
+=> PUBLICATION READINESS: NEEDS MANUSCRIPT CHANGES
+
+The manuscript is not near rejection on quality of method or of engineering — the
+implementation is faithful and the methodology sections are defensible. It is not
+submittable because the experimental evidence does not yet reach the claims the
+method sections set up, and because two legacy tables carry numbers that cannot be
+traced to any artifact. E1 (boundary metrics, evaluation-only) and E2 (ablation)
+are the two experiments that would move this to submittable.
+
+--------------------------------------------------------------------------------
+Audit only. No manuscript text written or rewritten, no code modified, no
+experiment created, regenerated or evaluated.
+================================================================================

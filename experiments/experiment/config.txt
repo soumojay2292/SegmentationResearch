@@ -4,3 +4,13 @@ epochs:     1
 batch_size: 2
 img_size:   384
 lr:         0.001
+
+
+
+
+
+python train.py --model maffnet_original_reconstructed --dataset ISIC_2016 --epochs 1 --batch_size 2 --fast --exp maffnet_original_overfit
+
+
+
+python train.py --model maffnet_original_reconstructed --dataset ISIC_2016 --epochs 1 --batch_size 2 --fast --exp integration_test

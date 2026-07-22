@@ -17,6 +17,7 @@ from tqdm import tqdm   # ✅ NEW
 
 from models.maffnet import MAFFNet
 from models.stabilized_maffnet import StabilizedMAFFNet
+from models.maffnet_original_reconstructed import MAFFNetOriginalReconstructed
 from models.attention_unet import AttentionUNet
 from models.unet_plus_plus import UNetPlusPlus
 from models.unet import UNet
@@ -38,6 +39,41 @@ class _LogitWrapper(torch.nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         probs = self.model(x).clamp(1e-6, 1 - 1e-6)
         return torch.logit(probs)
+
+
+class _MAFFNetOriginalAdapter(torch.nn.Module):
+    """Pipeline compatibility shim for ``MAFFNetOriginalReconstructed``.
+
+    ``MAFFNetTrainer``/``MAFFNetLoss`` expect ``model(imgs)`` to return the
+    5-tuple ``(p1, p2, p3, p4, rec)`` (and use ``preds[0]`` for metrics), exactly
+    like ``MAFFNet`` and ``StabilizedMAFFNet``. The reconstructed model instead
+    returns a dict in train mode and a single ``p1`` tensor in eval mode. This
+    shim converts those outputs to the expected tuple WITHOUT modifying the
+    wrapped model, its layers, tensor flow, or its loss:
+
+      * train  : dict ``{segmentation_logits:[p1..p4], reconstruction:rec}`` -> tuple
+      * eval   : tensor ``p1`` -> ``(p1, p1, p1, p1, zeros_rec)`` so the trainer's
+                 val-loss unpack and ``preds[0]`` metric path both work.
+
+    The reconstructed model's own Dice+MSE loss is not invoked here; the trainer
+    drives it with the existing ``MAFFNetLoss``, as it does for the other
+    maffnet-family models. The architecture is untouched.
+    """
+
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor):
+        out = self.model(x)
+        if isinstance(out, dict):                      # training path
+            p1, p2, p3, p4 = out["segmentation_logits"]
+            return p1, p2, p3, p4, out["reconstruction"]
+        # evaluation path: model returns only p1
+        p1 = out
+        rec = torch.zeros(p1.size(0), 3, p1.size(2), p1.size(3),
+                          device=p1.device, dtype=p1.dtype)
+        return p1, p1, p1, p1, rec
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +155,8 @@ class SegDataset(torch.utils.data.Dataset):
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="maffnet",
-                   choices=["maffnet", "stabilized_maffnet", "attention_unet", "unetpp", "unet", "transunet"],
+                   choices=["maffnet", "stabilized_maffnet", "maffnet_original_reconstructed",
+                            "attention_unet", "unetpp", "unet", "transunet"],
                    help="Model architecture to train")
     p.add_argument("--dataset", default="ISIC_2018")
     p.add_argument("--data_root", default="dataset_split")
@@ -213,6 +250,19 @@ def main():
     elif args.model == "stabilized_maffnet":
         print("Building Stabilized MAFFNet (SAM2 + frequency branch + gated fusion) …")
         model   = StabilizedMAFFNet(checkpoint=args.checkpoint)
+        trainer = MAFFNetTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "maffnet_original_reconstructed":
+        print("Building MAFFNetOriginalReconstructed (paper-faithful reproduction) …")
+        base    = MAFFNetOriginalReconstructed(sam_checkpoint=args.checkpoint)
+        model   = _MAFFNetOriginalAdapter(base)   # 5-tuple interface shim
         trainer = MAFFNetTrainer(
             model=model,
             train_loader=train_loader,

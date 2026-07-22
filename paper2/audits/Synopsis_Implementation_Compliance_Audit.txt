@@ -1,0 +1,278 @@
+================================================================================
+SYNOPSIS-TO-IMPLEMENTATION COMPLIANCE AUDIT
+Paper 2 — Canonical Implementation Determination
+================================================================================
+Auditor role : Lead Research Architecture Auditor
+Sources of truth:
+  - Synopsis  : "Stabilised MAFFNet with SAM-based Encoder for Skin Lesion
+                 Segmentation" (PG Research Methodology Report), §1.3.1, §1.4,
+                 Eqs. 1.1-1.5.
+  - Repository: models/*.py, modules/*.py, training/trainer.py, train.py.
+Scope        : verification only. No code, synopsis, or manuscript modified.
+Evidence rule: every conclusion cites the synopsis (Eq/§/page) or code
+               (file:line). Items not verifiable from the repository are marked
+               [UNVERIFIED].
+================================================================================
+
+
+1. SYNOPSIS ARCHITECTURE SPECIFICATION
+--------------------------------------------------------------------------------
+Extracted directly from the synopsis (not summarized).
+
+Problem (Abstract, §1.3): boundary precision; CNN pooling smooths edges;
+  transformers cost quadratically; MAFFNet FFT causes NaN under fp16 and
+  feature misalignment with large pretrained encoders.
+
+Objectives (§1.3.1, p4-5):
+  O1. Stabilised MAFFNet framework with a SAM encoder backbone, mixed-precision
+      stable, "boundary-aware learning as the primary design objective".
+  O2. Eliminate FFT instability by isolating spectral computation to float32.
+  O3. Explicit feature alignment (instance normalisation + channel projection).
+  O4. Replace cross-attention fusion with lightweight gated fusion (linear).
+
+Encoder (§Encoder, p6): SAM image encoder (ViT), SAM2 as drop-in replacement.
+  Patch embedding + early transformer blocks FROZEN; later blocks FINE-TUNED.
+  Produces F in R^{B×C×H×W}. Intermediate block outputs = skip connections,
+  projected to decoder channels (U-Net design).
+
+Stabilised Frequency Processing Module (§, p6-7; Eq 1.1-1.2):
+  - 2D DFT of F (Eq 1.1).
+  - FFT forced to float32, then cast back to float16 (Eq 1.2).
+  - Magnitude values CLIPPED.
+  - LayerNorm applied to reconstructed spatial features AFTER inverse FFT.
+  - High-pass filter mask parameterised by threshold omega0.
+  - A TWO-LAYER 1x1 convolutional network processes REAL and IMAGINARY
+    components independently.
+  - Inverse FFT reconstructs boundary-sensitive F_freq in R^{B×C×H×W}.
+
+Feature Alignment (§, p7): InstanceNorm applied independently to BOTH F and
+  F_freq; then a 1x1 convolutional projection maps both to a shared channel
+  dimension C'.
+
+Lightweight Gated Fusion (§, p7; Eq 1.3-1.4):
+  G = sigmoid( Wg · [F' || F'_freq] + bg )      (Eq 1.3)
+  F_fused = G ⊙ F' + (1 - G) ⊙ F'_freq           (Eq 1.4)
+  Wg = 1x1 conv; sigmoid gate; linear spatial complexity.
+
+Decoder (§, p7-8): FOUR bilinear upsampling stages, each followed by TWO 3x3
+  conv + BatchNorm + ReLU. Encoder-block skips concatenated with upsampled maps.
+  F_fused = decoder input. FINAL 1x1 conv + sigmoid -> SINGLE-channel
+  probability map, thresholded at 0.5.
+
+Reconstruction branch: NONE in synopsis.
+
+Training Objective (Eq 1.5, p8): L = lambda_BCE·L_BCE + lambda_Dice·L_Dice,
+  both weights = 1.0. Optimizer Adam, lr 1e-4, cosine annealing, 100 epochs;
+  model selection on validation Dice.
+
+Deep supervision: NONE (single output).
+Boundary supervision as a loss term: NONE (boundary-awareness is architectural,
+  via the frequency branch).
+
+Baselines (§1.3.1, §Exp Setup): U-Net, Attention U-Net, UNet++, TransUNet,
+  SGT-Net, MAFFNet. Datasets ISIC 2016/2017/2018; images 384x384.
+
+
+2. REPOSITORY IMPLEMENTATION COMPARISON
+--------------------------------------------------------------------------------
+MAFF-Net-family models present:
+
+  models/stabilized_maffnet.py  (class StabilizedMAFFNet)
+      SAM2 encoder + {FeatureAlignment || FrequencyBranch -> FeatureAlignment}
+      -> GatedFusion -> DecoderBlock + RDB.
+      Imports the three synopsis modules: stabilized_maffnet.py:26-28, 61-64.
+      *** ONLY model containing FeatureAlignment + FrequencyBranch + GatedFusion.
+
+  models/maffnet.py             (class MAFFNet)
+      MMPA + FGFF + DecoderBlock + RDB. Original-MAFFNet fusion. No synopsis
+      modules.
+
+  models/maffnet_original_reconstructed.py (class MAFFNetOriginalReconstructed)
+      MMPA + FreqTransformer + FGFF + EDB + RDB. Paper-faithful ORIGINAL MAFFNet.
+      No synopsis modules.
+
+  models/maffnet_original.py    (class MAFFNetOriginal)
+      Full paper reproduction (~185M). Deprecated. No synopsis modules.
+
+Synopsis-module code (verified):
+  FeatureAlignment: InstanceNorm2d(affine=False) -> Conv1x1 -> ReLU
+      (modules/feature_alignment.py:47-52).
+  FrequencyBranch : rfft2(x.float()) -> binary radial high-pass mask (r>=cutoff)
+      -> irfft2 -> cast back; parameter-free
+      (modules/frequency_branch.py:98-117).
+  GatedFusion     : g = sigmoid(Conv1x1([Fs||Ff])); out = g·Fs + (1-g)·Ff
+      (modules/gated_fusion.py:160-164).
+
+Training pipeline (verified):
+  stabilized_maffnet -> MAFFNetTrainer (train.py:250-253).
+  MAFFNetTrainer.criterion = MAFFNetLoss (trainer.py:294), applied trainer.py:339.
+  MAFFNetLoss = deep-supervised Dice+BCE + BDS(Sobel edge L1) + EWR(edge-weighted
+      reconstruction MSE) (trainer.py:150-197).
+  Optimizer AdamW lr default 1e-3, wd 0.01 (trainer.py:280); LinearLR->0
+      (trainer.py:287); bf16 autocast (trainer.py:337); non-finite guard
+      (trainer.py:341).
+  Baselines use SimpleTrainer + SimpleLoss (Dice+BCE only), not this pipeline.
+
+
+3. COMPLIANCE MATRIX  (A = Matches Exactly · B = Matches with Engineering
+   Adaptations · C = Different from Synopsis)
+--------------------------------------------------------------------------------
+Reference model = stabilized_maffnet.py (only synopsis-module implementation).
+
+  Component              Class  Evidence
+  ---------------------  -----  -------------------------------------------------
+  Gated Fusion             A    Eq 1.3-1.4 == gated_fusion.py:160-164 exactly.
+  Feature Alignment        A    InstanceNorm+1x1 proj match §p7; +ReLU (minor).
+                                feature_alignment.py:47-52; stabilized:62-63.
+  SAM encoder (backbone)   B    SAM2 ok; but FULLY FROZEN (stabilized:42-55) vs
+                                synopsis "early frozen, later fine-tuned" (p6).
+  Frequency Branch         B    Core fp32-FFT + high-pass + inverse-FFT present
+                                (frequency_branch.py:112-116); but THREE synopsis
+                                sub-ops ABSENT: magnitude clipping, LayerNorm
+                                after iFFT, two-layer 1x1 conv on real/imag.
+  FFT / mixed precision    B    fp32 FFT ok (frequency_branch.py:112); trainer
+                                uses bf16 (trainer.py:337), synopsis says fp16.
+  Decoder                  B    Bilinear-up + projected skips ok (stabilized:
+                                67-78,110-112); but 4 deep-sup heads vs 1 output;
+                                skips from FUSED features (stabilized:110-112),
+                                synopsis says encoder-block skips (p7-8).
+  Reconstruction branch    C    RDB present (stabilized:87,129); synopsis: NONE.
+  Training objective       C    Synopsis Dice+BCE (Eq 1.5); impl adds BDS + EWR
+                                (trainer.py:161-197).
+  Boundary supervision     C    Not in synopsis; impl BDS+EWR (trainer.py:161-197).
+  Deep supervision         C    Not in synopsis; impl 4 heads (stabilized:81-84,
+                                123-126).
+  Optimizer / schedule     C    Synopsis Adam+cosine, lr 1e-4, 100 ep; impl
+                                AdamW+LinearLR, lr default 1e-3, bf16
+                                (trainer.py:280-291).
+
+Other models (maffnet, maffnet_original, maffnet_original_reconstructed):
+  Frequency Branch / Feature Alignment / Gated Fusion = ABSENT -> class C on all
+  three synopsis-signature components. Not candidates for canonical.
+
+
+4. CANONICAL IMPLEMENTATION SELECTION
+--------------------------------------------------------------------------------
+CANONICAL = models/stabilized_maffnet.py  (paper term: "Proposed MAFF-Net").
+
+Justification (code-verified): it is the ONLY implementation that instantiates
+the synopsis's three signature modules and wires them as
+  SAM2 -> {spatial align || FrequencyBranch -> align} -> GatedFusion -> decoder
+  with projected skips
+(stabilized_maffnet.py:60-118), matching synopsis §1.4 O2/O3/O4. The other
+MAFFNet files implement the MMPA/FGFF fusion of the ORIGINAL MAFFNet, which the
+synopsis explicitly redesigns away from. Therefore all Paper 2 methodology must
+derive from stabilized_maffnet.py together with training/trainer.py.
+The remaining models are historical / baseline / paper-reproduction versions.
+
+
+5. DEVIATIONS FROM SYNOPSIS  (canonical impl)
+--------------------------------------------------------------------------------
+D1. Encoder fully frozen (stabilized:42-55) vs synopsis partial fine-tuning (p6).
+D2. Frequency Branch omits: magnitude clipping, LayerNorm-after-iFFT, two-layer
+    1x1 conv on real/imaginary components (frequency_branch.py has none of these;
+    :98-117) — all specified in synopsis §Stabilised Frequency Processing (p6-7).
+D3. ReLU appended in FeatureAlignment (feature_alignment.py:49) — not stated in
+    synopsis (§p7 lists InstanceNorm + 1x1 projection only).
+D4. Auxiliary reconstruction branch (RDB) present (stabilized:87,129) —
+    synopsis has NO reconstruction branch.
+D5. Boundary-aware Deep Supervision (BDS) + Edge-weighted Reconstruction (EWR)
+    present (trainer.py:161-197) — synopsis objective is plain Dice+BCE (Eq 1.5).
+D6. Deep supervision with 4 heads (stabilized:81-84,123-126) — synopsis has a
+    single 1x1+sigmoid output (p8).
+D7. Optimizer AdamW + LinearLR + bf16, lr default 1e-3 (trainer.py:280-291,337)
+    vs synopsis Adam + cosine, lr 1e-4, fp16, 100 epochs (p8).
+D8. Decoder skips taken from FUSED features (stabilized:110-112) vs synopsis
+    encoder-block skips (p7-8).
+
+
+6. CONTRIBUTION CLASSIFICATION
+--------------------------------------------------------------------------------
+Matches to synopsis objectives (Scientific Contribution, as intended):
+  - Gated Fusion Module (O4)       -> Scientific Contribution (matches, class A).
+  - Feature Alignment Module (O3)  -> Scientific Contribution (matches, class A).
+  - Frequency Branch fp32 FFT +
+    high-pass (O2)                 -> Scientific Contribution (core matches, B).
+
+Deviations classified:
+  - D1 Fully frozen encoder        -> Engineering Adaptation.
+  - D2 Omitted freq sub-ops        -> Implementation Detail (simplification).
+  - D3 ReLU in FeatureAlignment    -> Implementation Detail.
+  - D7 Optimizer/schedule/lr        -> Engineering Adaptation.
+  - D8 Skips from fused features    -> Implementation Detail.
+
+Beyond-synopsis ADDITIONS (present in impl, absent from synopsis):
+  - D4 RDB reconstruction branch   -> Added component (inherited from Original
+                                       MAFFNet). NOT a synopsis contribution.
+  - D5 BDS + EWR (BcDS)            -> Added component. NOT in the approved
+                                       synopsis; novel per repo design docs, but
+                                       outside the synopsis scope.
+  - D6 Deep supervision            -> Added component. NOT in synopsis.
+
+
+7. TRAINING METHODOLOGY COMPARISON
+--------------------------------------------------------------------------------
+  Aspect              Synopsis                     Implementation           Match
+  ------------------  ---------------------------  -----------------------  -----
+  Loss terms          Dice + BCE (Eq 1.5)          Dice + BCE + BDS + EWR     NO
+                                                   (trainer.py:150-197)
+  Loss weights        lambda_BCE = lambda_Dice = 1 Dice+BCE at 1; BDS,EWR     NO
+                                                   at 0.05; BDS warmup 5 ep
+                                                   (trainer.py:88-98,166-197)
+  Output supervision  single 1x1+sigmoid output    4 deep-sup heads + RDB     NO
+  Optimizer           Adam, lr 1e-4                 AdamW, lr default 1e-3     NO
+  Schedule            cosine annealing, 100 ep      LinearLR -> 0             NO
+  Precision           fp32 FFT within fp16 MP       fp32 FFT + bf16 autocast   B
+  Terminology         "boundary-aware" (arch.)      "Boundary-centric Dual     NO
+                                                   Supervision (BcDS)"
+Notes:
+  - The synopsis training objective is plain Dice+BCE; the canonical model as
+    trained uses BcDS (additive boundary terms) + reconstruction + deep
+    supervision. The trained objective EXCEEDS and DIVERGES from the synopsis.
+  - "Boundary-centric Dual Supervision / BcDS" does not appear in the synopsis.
+    The synopsis frames boundary-awareness as an ARCHITECTURAL property of the
+    frequency branch (O1), not a supervision/loss term.
+  - Manuscript training-methodology terminology therefore requires
+    clarification/decision (classification only; no change recommended here).
+
+
+8. RISKS BEFORE MANUSCRIPT WRITING
+--------------------------------------------------------------------------------
+R1. Training-objective divergence: synopsis = Dice+BCE (Eq 1.5); canonical model
+    trained with BcDS (trainer.py:150-197). Presenting BcDS deviates from the
+    approved synopsis; presenting Dice+BCE does not match the trained model.
+    Which is intended = [UNVERIFIED from repository].
+R2. Reconstruction (RDB), deep supervision, and boundary losses exist in the
+    implementation but are ABSENT from the synopsis — inclusion/exclusion must be
+    decided before writing III-H / III-I.
+R3. Frequency Branch as implemented is SIMPLER than the synopsis (3 sub-ops
+    absent, D2). Manuscript must describe the IMPLEMENTED branch, not the
+    synopsis spec.
+R4. Encoder fully frozen (impl) vs synopsis partial fine-tune (D1).
+R5. Optimizer / schedule / learning rate differ (D7).
+R6. Decoder skips from fused features vs encoder blocks (D8).
+R7. Carried from prior audits: proposed-model metrics are VALIDATION-set, not
+    test-set (not comparable to baselines until a test run exists).
+R8. Carried from prior audits: "Boundary-centric" overstates the numerically
+    auxiliary boundary terms (Dice+BCE weight 1 vs BDS/EWR weight 0.05, BDS
+    warmed from 0).
+
+
+9. FINAL RECOMMENDATION
+--------------------------------------------------------------------------------
+- models/stabilized_maffnet.py (with training/trainer.py) is the single
+  authoritative implementation for Paper 2. All manuscript sections must be
+  derived from it.
+- models/maffnet.py, models/maffnet_original.py, and
+  models/maffnet_original_reconstructed.py are historical development / baseline
+  / paper-reproduction versions and should be referenced only where explicitly
+  discussing baselines or reproduction.
+- Before writing Sections III-H (BcDS) and III-I (Training Objective), the
+  training-methodology divergence (R1, R2) and the frequency-branch
+  simplification (R3) must be reconciled at the methodology-decision level.
+
+--------------------------------------------------------------------------------
+This audit modified no code, no synopsis, and no manuscript. Every conclusion is
+traceable to the synopsis (Eq/§/page) or the repository (file:line). Items that
+could not be verified from the repository are marked [UNVERIFIED].
+================================================================================

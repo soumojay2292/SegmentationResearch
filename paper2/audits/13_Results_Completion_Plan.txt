@@ -1,0 +1,139 @@
+================================================================================
+RESULTS COMPLETION PLAN — Paper 2
+Lead Research Execution Planner
+================================================================================
+Purpose : minimum work to move the repository from RESULTS NOT READY -> RESULTS
+          READY for the Experimental Setup and Results sections.
+Basis   : reuses audits 11 (Experimental Pipeline) and 12 (Experiment Asset
+          Inventory) ONLY. No new audit, no architecture inspection, no code change.
+Rule    : prefer EVALUATION over RETRAINING; recommend a run only where audit
+          evidence shows it is required. Runtimes are ESTIMATES — the repository
+          records no per-run wall-clock (audit 11 §7), so all times are marked [est].
+================================================================================
+
+
+0. BLOCKER TRIAGE  (from audit 12 §H; reused, not re-derived)
+--------------------------------------------------------------------------------
+ID  Blocker                                     Class     Blocks pub?  Action
+--  ------------------------------------------  --------  -----------  ----------
+B0  Checkpoint load-compatibility [NOT VERIFIED] Major    prereq       Evaluate
+      (C5 grouping + adapter prefix; audit 12 §F)                      (verify)
+B1  Proposed/Restored/Faithful = VAL, not TEST   Critical  YES          Evaluate
+      (no metrics.json; audit 12 §A,E)                                  (test-eval)
+B2  U-Net ISIC 2017 TEST metrics.json missing    Major     YES          Evaluate
+      (audit 12 §A,G)                                                   (else Rerun)
+B3  TransUNet ISIC 2018 metrics.json Dice=0.0000  Major     YES          Rerun
+      (failed run; audit 12 §A,G)                                       (retrain 1)
+B4  Baseline table provenance mismatch           Major     YES          Evaluate
+      (metrics.json != performance_tables; §E)                          (re-aggregate)
+B5  Ablation experiments absent                  Major     YES (Results Retrain
+      (component/cutoff/BcDS; §D,G)                          ablation)   (partial)
+B6  Architecture / boundary / attention figures  Editorial  NO          Document
+      (author-drawn / assembly; §C,G)                                   (downstream)
+B7  Multi-seed (single-run only; §G)             Minor      NO          Document
+      (disclose as limitation)                                          (ignore-run)
+
+Legend: Evaluate = inference/aggregation, no training. Rerun/Retrain = new training.
+No blocker is Critical-and-unresolvable; B1 is the only Critical and is
+resolvable by evaluation.
+
+
+1. EXECUTION PRIORITY TABLE  (minimum required tasks)
+--------------------------------------------------------------------------------
+Pri  Task                                         Reason                       Runtime[est]  Expected output
+---  -------------------------------------------  ---------------------------  ------------  ----------------------------------
+ 1   Verify checkpoint loadability: load          B0 flagged [NOT VERIFIED];   ~0.2 GPU-h    pass/fail per checkpoint; decides
+     best model.pth of stabilized_maffnet /       determines whether test-                   whether B1 is eval-only or needs
+     maffnet / maffnet_original_reconstructed     eval is possible without                    a retrain fallback
+     into current code (via train.py adapter).    retraining.
+ 2   Evaluate Proposed, Restored, Paper-faithful  B1 (Critical): makes the     ~1-2 GPU-h    metrics.json (test) for 9 runs;
+     on the held-out TEST split (3 models x 3     proposed row comparable to   (inference    proposed row becomes test-set
+     datasets = 9 inference passes); write        the TEST-set baselines.      only)         comparable
+     metrics.json.
+ 3   Produce U-Net ISIC 2017 TEST metrics.json:   B2: completes baseline TEST  ~0.2 GPU-h    unet ISIC2017 test metrics.json
+     evaluate existing unet_final_2017 model.pth  set. Evaluation preferred;   (eval) /
+     on test; if no loadable checkpoint, short    retrain only as fallback.    ~1-2 h
+     retrain.                                                                  (retrain fb)
+ 4   Re-run TransUNet on ISIC 2018 (train, 40     B3: current run failed       ~3-5 GPU-h    valid transunet ISIC2018
+     epochs) -> valid TEST metrics.json.          (Dice 0.0000); a bad         (retrain)     metrics.json
+                                                  checkpoint cannot be
+                                                  salvaged by evaluation.
+ 5   Component ablation on the PRIMARY benchmark   B5: contribution validation ~16-32        4 ablation metrics.json/summary
+     ISIC 2018 only: Base (SAM2+decoder),          expected for the 3 new       GPU-h         rows -> ablation_tables + Fig 8
+     +Frequency Branch, +Feature Alignment,        modules; ablation_tables     (retrain,     [requires an ablation switch to
+     +Gated Fusion (4 runs).                        are placeholders.            dominant)     toggle modules — verify present]
+ 6   Regenerate the performance-comparison table   B4: reconcile provenance;    ~0.2 GPU-h    performance_tables rebuilt from
+     from the canonical TEST metrics.json          produce a like-for-like,     (aggregate)   verified TEST metrics.json,
+     (Steps 2+3+4) via utils/aggregate_benchmark;  reproducible baseline vs                   single provenance
+     fix canonical-run selection.                  proposed table.
+
+Optional / documented (do NOT block Results-readiness; defer or disclose):
+ -   Cutoff sweep + BcDS on/off ablations (audit 12 §D) — Optional; document if omitted.
+ -   Multi-seed repeats (B7) — Optional; disclose single-run as a limitation.
+ -   Architecture / qualitative-comparison / ablation figures (B6) — downstream
+     assembly from existing samples/ + Step 5 outputs; not new experiments.
+
+
+2. DEPENDENCY GRAPH
+--------------------------------------------------------------------------------
+   Step 1 (verify checkpoints)
+        |
+        v
+   Step 2 (test-eval proposed/restored/faithful) ----+
+                                                      |
+   Step 3 (unet 2017 test)  ----------------------+   |
+                                                  |   |
+   Step 4 (transunet 2018 rerun) -----------------+   |
+                                                  v   v
+                                          Step 6 (regenerate performance table)
+                                                      |
+   Step 5 (component ablation, ISIC 2018) ------------+---> RESULTS READY (data)
+
+   - Steps 3 and 4 are independent of Steps 1-2 and of each other (baseline fixes).
+   - Step 6 depends on Steps 2, 3, 4 (needs all TEST metrics.json).
+   - Step 5 is independent (proposed model + ablation switch); feeds ablation
+     table/figure, joins at RESULTS READY.
+   - Optional/figure tasks depend on Step 5 (ablation chart) and existing samples/.
+
+
+3. CRITICAL PATH
+--------------------------------------------------------------------------------
+Shortest path to a VALID main performance comparison (proposed vs baselines):
+   Step 1 -> Step 2 -> (Step 3 and Step 4 in parallel) -> Step 6.
+   Critical-path runtime [est]: ~5-8 GPU-h (dominated by Step 4 retrain).
+Full Results (main comparison + component ablation):
+   critical path above  ||  Step 5.
+   Full runtime [est]: ~20-40 GPU-h (dominated by Step 5 ablation, 4 trainings).
+If ablation is scoped out of the first submission (documented as future work), the
+repository reaches a valid MAIN-comparison Results state on the ~5-8 GPU-h path.
+
+
+4. STOP CONDITION
+--------------------------------------------------------------------------------
+The repository is considered RESULTS READY when ALL of the following hold:
+  (1) Proposed MAFF-Net, Restored MAFF-Net, and Paper-faithful Reconstruction each
+      have TEST-set metrics.json on ISIC 2016/2017/2018 (Step 2), so the proposed
+      row is compared to baselines on the SAME split (resolves B1).
+  (2) Every baseline has a valid TEST metrics.json on all three datasets — U-Net
+      ISIC 2017 produced (Step 3) and TransUNet ISIC 2018 re-run (Step 4) — with
+      no failed (Dice 0.0000) runs.
+  (3) The performance-comparison table is regenerated solely from the canonical
+      TEST metrics.json, with a single, documented provenance (Step 6) (resolves B4).
+  (4) A component ablation on the primary benchmark (ISIC 2018) is available to
+      populate the ablation table (Step 5); OR ablation is explicitly deferred and
+      documented as future work.
+  (5) Remaining gaps — multi-seed, cutoff/BcDS ablations, and figure assets — are
+      documented as limitations/downstream work (B6, B7); they do not block a valid
+      Experimental Setup + main Results write-up.
+
+
+NOTES
+--------------------------------------------------------------------------------
+- Prefer-evaluation honored: 4 of 6 required tasks are evaluation/aggregation
+  (Steps 1,2,3,6); only Steps 4 and 5 require training, and only because the
+  respective runs are failed/absent (audit-backed).
+- All runtimes are ESTIMATES; the repository records no per-run wall-clock.
+- Checkpoint load-compatibility (Step 1) gates whether B1/B2 are evaluation-only;
+  if checkpoints do not load, Steps 2/3 escalate to short retrains.
+- No code, architecture, experiment output, or manuscript modified by this plan.
+================================================================================

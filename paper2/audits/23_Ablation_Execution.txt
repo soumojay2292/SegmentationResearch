@@ -1,0 +1,174 @@
+================================================================================
+ARCHITECTURE ABLATION EXECUTION — Paper 2   (EXECUTION STEP 23)
+Lead Experiment Execution Engineer
+================================================================================
+Task    : train the 3-run leave-one-out architecture ablation designed in audit 22
+          and evaluate every new checkpoint with the canonical region + boundary
+          pipelines.
+Scope   : the canonical Proposed model, its checkpoint, and every existing
+          experiment were NOT modified. The only per-run change is one disabled
+          architectural component. No hyperparameter, dataset, optimiser, schedule,
+          or augmentation was changed.
+Result  : PASS — 3 new checkpoints trained and evaluated on ISIC 2018 TEST; Full
+          Proposed reused as the reference (not retrained).
+Outputs : paper2/results/ablation_results.{csv,md,tex}
+================================================================================
+
+
+1. EXACT CODE CHANGES
+--------------------------------------------------------------------------------
+NEW FILE (canonical models untouched): models/stabilized_maffnet_ablation.py
+  class StabilizedMAFFNetAblation(StabilizedMAFFNet): subclass that, after the
+  parent __init__, swaps exactly ONE submodule group for a shape-preserving stand-in:
+     ablate="freq"   : self.freq   = ModuleList([nn.Identity]*n)
+                       -> frequency stream becomes align_f[i](f) (no high-pass)
+     ablate="align"  : self.align_s = self.align_f = ModuleList([nn.Identity]*n)
+                       -> fs=f, ff=freq[i](f) reach the gate unnormalised (c->c, safe)
+     ablate="fusion" : self.fuse   = ModuleList([MeanFusion]*n)
+                       -> learned gate replaced by fixed 0.5*(Fs+Ff)
+  MeanFusion is a 3-line parameter-free nn.Module matching GatedFusion's signature,
+  so the parent forward runs unchanged. The frozen SAM2 encoder, skip projections,
+  decoder, heads, and RDB are inherited verbatim. Output stays a 5-tuple, so the
+  canonical MAFFNetTrainer / MAFFNetLoss are used with no modification.
+
+  Smoke-verified before any GPU time: all three variants build, forward on a
+  384x384 input, return (p1,p2,p3,p4,rec) with p1=(1,1,384,384). Trainable-param
+  counts: Full 11.0065M; -freq 11.0065M (FrequencyBranch is parameter-free, so the
+  ablation isolates the spectral OPERATION, not capacity); -align 10.4802M;
+  -fusion 10.4812M (each drops the removed 1x1 convs).
+
+  NO EDIT was made to models/stabilized_maffnet.py, models/maffnet.py,
+  training/trainer.py, or train.py (mtimes unchanged, verified post-run).
+
+ENVIRONMENT-ONLY FIX (not a code change): the first launch crashed at
+trainer.py:529 because tqdm.write emits a Unicode arrow ("New best ...") that the
+Windows cp1252 console codec cannot encode when stdout is redirected to a file
+(UnicodeEncodeError ↑). Resolved by setting PYTHONIOENCODING=utf-8 on the
+driver process. The trainer was NOT modified. The three partial directories left by
+the failed launch were deleted before the rerun (they were created in this session).
+
+
+2. CHECKPOINTS PRODUCED (exactly 3 new)
+--------------------------------------------------------------------------------
+  experiments/ablation_no_frequency/model.pth     938 MB   (ablate=freq)
+  experiments/ablation_no_alignment/model.pth     932 MB   (ablate=align)
+  experiments/ablation_no_gated_fusion/model.pth  932 MB   (ablate=fusion)
+  Each directory also holds: best_maffnet.pth, training_log.csv, config.txt,
+  summary.csv, metrics.json, loss_curve.png, iou_curve.png, samples/, report.html.
+  Disk hygiene: the 40 per-epoch model_epoch_*.pth were pruned after each run (the
+  best checkpoint = model.pth is retained). This affects nothing but disk usage.
+  Reference (NOT retrained): experiments/stabilized_maffnet_ISIC2018 (Full Proposed),
+  model.pth mtime unchanged at 2026-06-26.
+
+
+3. TRAINING
+--------------------------------------------------------------------------------
+  Protocol (identical to canonical stabilized_maffnet, from train.py + trainer.py):
+    ISIC 2018 (1825 train / 377 val / 392 test), 40 epochs, batch 2, img 384,
+    AdamW lr 1e-3 wd 0.01, LinearLR->0, bf16 autocast, grad-clip 1.0, MAFFNetLoss
+    defaults (BcDS lambda_bds=lambda_ewr=0.05, warmup 5, ds_weights (1,1,1,0.01),
+    pos_weight 2), best-val-Dice checkpoint selection. Only the disabled module
+    differs per run.
+    run                        best val Dice   train time
+    ablation_no_frequency         0.8756        123.7 min
+    ablation_no_alignment         0.8774        136.9 min
+    ablation_no_gated_fusion      0.8789        135.1 min
+  All three completed 40/40 epochs. Total training ~6.6 GPU-h on RTX 2000 Ada.
+
+
+4. EVALUATION RESULTS (ISIC 2018 TEST, n=392)
+--------------------------------------------------------------------------------
+  Region metrics via the canonical MAFFNetTrainer.evaluate (bf16, threshold 0.5);
+  boundary metrics via the Step-7 MedPy(HD95/ASSD) + Cheng-et-al.(Boundary IoU)
+  pipeline (fp32). The boundary pass recomputed Dice and it matched the region
+  evaluation on every run (0.8708 / 0.8650 / 0.8725), confirming identical
+  predictions across the two metric passes.
+
+  Configuration        Dice    IoU     Acc     HD95(px) ASSD(px) B-IoU
+  -------------------  ------  ------  ------  -------  -------  ------
+  Full Proposed        0.8701  0.7900  0.9493  22.554   9.240    0.4611   <- best on
+  - Frequency Branch   0.8708  0.7868  0.9496  23.574   9.546    0.4416      all THREE
+  - Feature Alignment  0.8649  0.7811  0.9502  23.676   9.869    0.4326      boundary
+  - Gated Fusion       0.8725  0.7907  0.9520  25.546   9.488    0.4508      metrics
+
+
+5. CONTRIBUTION OF EACH DISABLED MODULE (Full - ablated; + = the module helps)
+--------------------------------------------------------------------------------
+  module removed       dDice     dIoU      dHD95    dASSD    dB-IoU
+  -------------------  --------  --------  -------  -------  --------
+  Frequency Branch     -0.0007   +0.0032   +1.020   +0.306   +0.0196
+  Feature Alignment    +0.0052   +0.0089   +1.121   +0.629   +0.0286
+  Gated Fusion         -0.0024   -0.0007   +2.992   +0.248   +0.0103
+  (dHD95/dASSD = ablated - Full, so + means removal worsened boundary error.)
+
+  READING (stated honestly):
+  a) On REGION metrics the three modules are essentially NEUTRAL. Removing the
+     Frequency Branch or the Gated Fusion actually leaves Dice marginally HIGHER
+     (+0.0007, +0.0024); only Feature Alignment shows a positive region-Dice
+     contribution (+0.0052). No module "improves Dice" in any meaningful sense.
+  b) On BOUNDARY metrics all three modules contribute POSITIVELY on every measure:
+     removing any one worsens HD95, ASSD and Boundary IoU. The Full Proposed model
+     is the single best configuration on all three boundary metrics. This is exactly
+     what the boundary-centric design predicts — the modules act on boundary fidelity,
+     which region overlap barely reflects. This is the ablation's central result and
+     it SUPPORTS the module-level framing of III-D/E/F.
+  c) Relative importance is metric-dependent and should not be overstated:
+     Feature Alignment is the most consistent contributor (top on ASSD and Boundary
+     IoU, and the only one that also helps region Dice); Gated Fusion dominates HD95
+     (the worst-case boundary error) but contributes least to ASSD/Boundary IoU;
+     the Frequency Branch is a uniform, mid-sized positive on every boundary metric.
+
+  CAVEAT (must accompany any use of this table): these are SINGLE, UNSEEDED runs.
+  The boundary deltas (HD95 ~+1 to +3 px) are small against the per-image HD95 std
+  (~26-30 px on this dataset). No statistical significance is claimed or implied.
+  A multi-seed repeat (>=3) would be required before any delta is described as
+  significant. The region-metric neutrality also means the paper must NOT claim the
+  modules improve Dice; the defensible claim is that they improve boundary fidelity.
+
+
+6. COMPARISON AGAINST FULL PROPOSED — supports which claims?
+--------------------------------------------------------------------------------
+  SUPPORTED (each module has a concrete, positive boundary contribution vs Full):
+    III-D Frequency Branch  -> +0.0196 Boundary IoU, -1.02 px HD95 when present.
+    III-E Feature Alignment -> +0.0286 Boundary IoU, -1.12 px HD95, -0.63 px ASSD.
+    III-F Gated Fusion      -> -2.99 px HD95 (largest), +0.0103 Boundary IoU.
+    Table IV (previously an empty placeholder) is now filled with real values.
+  NOT ESTABLISHED BY THIS STUDY (unchanged from audit 22 VERIFY):
+    U1 BcDS efficacy (III-H) — a loss ablation, not run here.
+    U2 cutoff sensitivity — not varied.
+    U3 statistical significance — single-seed; deltas within run-to-run range.
+    U4 cross-dataset generality — ISIC 2018 only.
+    Region-metric benefit — NOT demonstrated (modules are region-neutral); the
+    manuscript should frame the contribution as boundary fidelity, not Dice.
+
+
+7. VERIFY
+--------------------------------------------------------------------------------
+  Canonical Proposed untouched       PASS  (model.pth mtime 2026-06-26 unchanged;
+                                            models/stabilized_maffnet.py unmodified)
+  Canonical trainer/train.py untouched PASS (mtimes unchanged)
+  Exactly three new checkpoints      PASS  (no_frequency / no_alignment /
+                                            no_gated_fusion)
+  All checkpoints evaluated          PASS  (region + boundary; Dice cross-check
+                                            matches on all 3)
+  Tables generated                   PASS  (ablation_results.{csv,md,tex})
+  No experiment overwritten          PASS  (new dirs only; failed partials deleted
+                                            before rerun; SKIP-GUARD active)
+
+
+8. STATUS
+--------------------------------------------------------------------------------
+New checkpoints      : 3
+Training completed   : YES (3/3, 40 epochs each)
+Evaluation completed : YES (region + boundary, 3/3)
+Output files         : paper2/results/ablation_results.{csv,md,tex}
+=> ARCHITECTURE ABLATION: PASS
+
+Fills audit-21 gap C3 (module ablation) for the three ARCHITECTURAL contributions.
+Does NOT cover BcDS (loss ablation) or establish significance; framing must be
+boundary fidelity, not region Dice (section 5 caveat).
+
+--------------------------------------------------------------------------------
+No canonical model or checkpoint modified; failed partial runs deleted before the
+successful rerun; environment-only encoding fix, no training-code change.
+================================================================================

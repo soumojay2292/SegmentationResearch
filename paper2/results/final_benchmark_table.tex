@@ -1,0 +1,31 @@
+% Final canonical benchmark table - Paper 2
+% All values: held-out TEST split, read verbatim from experiments/<run>/metrics.json.
+% Requires \usepackage{booktabs}
+\begin{table*}[t]
+\centering
+\caption{Quantitative comparison on the held-out test splits of ISIC 2016 ($n=192$), ISIC 2017 ($n=200$) and ISIC 2018 ($n=392$). All models use $384\times384$ inputs and an identical evaluation protocol. Best Dice per dataset in bold. $^{\dagger}$Precision is derived from $P=1/(2/\mathrm{Dice}-1/\mathrm{Recall})$ rather than measured directly. $^{\ddagger}$F1 is identical to Dice by construction.}
+\label{tab:benchmark}
+\begin{tabular}{llcccccc}
+\toprule
+Dataset & Model & Dice & mIoU & Accuracy & Precision$^{\dagger}$ & Recall & F1$^{\ddagger}$ \\
+\midrule
+ISIC 2016 & U-Net & 0.7874 & 0.6808 & 0.8951 & 0.8113 & 0.7649 & 0.7874 \\
+ & TransUNet & 0.8365 & 0.7349 & 0.9161 & 0.8675 & 0.8077 & 0.8365 \\
+ & MAFF-Net (Paper-faithful Recon.) & 0.8989 & 0.8264 & 0.9456 & 0.8884 & 0.9096 & 0.8989 \\
+ & \textbf{MAFF-Net (Restored)} & \textbf{0.9183} & \textbf{0.8555} & \textbf{0.9541} & 0.8963 & \textbf{0.9414} & \textbf{0.9183} \\
+ & MAFF-Net (Proposed) & 0.9169 & 0.8517 & 0.9548 & 0.9118 & 0.9220 & 0.9169 \\
+\midrule
+ISIC 2017 & U-Net & 0.7229 & 0.6152 & 0.9031 & 0.7246 & 0.7211 & 0.7229 \\
+ & TransUNet & 0.8683 & 0.7843 & 0.9561 & 0.8967 & 0.8418 & 0.8683 \\
+ & MAFF-Net (Paper-faithful Recon.) & 0.8734 & 0.7975 & 0.9588 & 0.8377 & 0.9123 & 0.8734 \\
+ & \textbf{MAFF-Net (Restored)} & \textbf{0.9116} & \textbf{0.8447} & \textbf{0.9700} & 0.9062 & \textbf{0.9171} & \textbf{0.9116} \\
+ & MAFF-Net (Proposed) & 0.9096 & 0.8421 & 0.9682 & 0.9123 & 0.9069 & 0.9096 \\
+\midrule
+ISIC 2018 & U-Net & 0.6866 & 0.5714 & 0.8732 & 0.6154 & 0.7766 & 0.6866 \\
+ & TransUNet & 0.8259 & 0.7265 & 0.9259 & 0.7683 & 0.8929 & 0.8259 \\
+ & MAFF-Net (Paper-faithful Recon.) & 0.8655 & 0.7855 & 0.9514 & 0.8535 & 0.8779 & 0.8655 \\
+ & \textbf{MAFF-Net (Restored)} & \textbf{0.8844} & \textbf{0.8080} & \textbf{0.9584} & 0.8719 & \textbf{0.8973} & \textbf{0.8844} \\
+ & MAFF-Net (Proposed) & 0.8701 & 0.7900 & 0.9493 & 0.8669 & 0.8733 & 0.8701 \\
+\bottomrule
+\end{tabular}
+\end{table*}

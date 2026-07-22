@@ -1,0 +1,17 @@
+% Architecture ablation - Proposed MAFF-Net (ISIC 2018 TEST). Requires booktabs.
+\begin{table}[t]
+\centering
+\caption{Leave-one-out architecture ablation of the Proposed MAFF-Net on the ISIC 2018 test split. Full Proposed is the canonical checkpoint (reused). Each row disables one component under the identical training protocol. HD95/ASSD in pixels ($\downarrow$); Dice/IoU/Boundary IoU ($\uparrow$).}
+\label{tab:ablation}
+\begin{tabular}{lccccc}
+\toprule
+Configuration & Dice & IoU & HD95 & ASSD & B-IoU \\
+\midrule
+\textbf{Full Proposed} & 0.8701 & 0.7900 & 22.554 & 9.240 & 0.4611 \\
+\midrule
+- Frequency Branch & 0.8708 & 0.7868 & 23.574 & 9.546 & 0.4416 \\
+- Feature Alignment & 0.8649 & 0.7811 & 23.676 & 9.869 & 0.4326 \\
+- Gated Fusion & 0.8725 & 0.7907 & 25.546 & 9.488 & 0.4508 \\
+\bottomrule
+\end{tabular}
+\end{table}

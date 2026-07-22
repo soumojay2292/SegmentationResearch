@@ -1,0 +1,120 @@
+================================================================================
+U-NET ISIC 2017 TEST EVALUATION — Paper 2
+(Execution Step 3 of 13_Results_Completion_Plan)
+Lead Experiment Execution Engineer
+================================================================================
+Task   : generate the missing U-Net ISIC 2017 TEST metrics.json from the existing
+         checkpoint. Evaluation preferred over retraining.
+Result : PASS — evaluation succeeded, no retraining required.
+Scope  : evaluation only. No training, no fine-tuning, no training code modified,
+         no existing file overwritten.
+================================================================================
+
+
+1. STEP 1 — CHECKPOINT LOCATION
+--------------------------------------------------------------------------------
+Requested path `experiments/unet_ISIC_2017/` DOES NOT EXIST (verified).
+Candidate U-Net ISIC 2017 run directories present in the repository:
+   experiments/unet_final_2017                     -> config.txt, model.pth (45M),
+                                                      summary.csv, samples/   [USABLE]
+   experiments/unet_ISIC_2017_2026-04-28_15-19-03  -> checkpoints/ (epoch 1..20),
+                                                      summary.csv, samples/;
+                                                      model.pth ABSENT; summary Dice
+                                                      0.0000 (failed run)      [UNUSABLE]
+   experiments/unet_ISIC_2017_2026-04-28_15-08-24  -> superseded dated run      [UNUSED]
+
+=> Canonical U-Net ISIC 2017 run = experiments/unet_final_2017.
+   (Naming is inconsistent with the 2016/2018 counterparts, which are
+    experiments/unet_ISIC_2016 and experiments/unet_ISIC_2018.)
+
+Checkpoint verification (current codebase, models.unet.UNet):
+   container keys : ['epoch', 'state_dict', 'optim', 'dice']
+   epoch          : 13     checkpoint val Dice : 0.63387
+   state_dict     : 51 keys, first = enc1.0.weight
+   missing 0 | unexpected 0 | shape mismatch 0 | STRICT LOAD: PASS
+=> Checkpoint exists, loads, and is compatible. Retraining NOT required.
+
+
+2. STEP 2 — EVALUATION PERFORMED
+--------------------------------------------------------------------------------
+Data      : dataset_split/ISIC_2017/test.csv via train.SegDataset(split="test"),
+            img_size 384, batch_size 2, no augmentation on test. n_test = 200.
+Device    : CUDA (NVIDIA RTX 2000 Ada Generation).
+Metrics   : training.trainer.compute_metrics — the SAME metric function used for the
+            MAFF-Net family and for every baseline (threshold 0.5, batch-size
+            weighted average).
+Test loss : training.simple_trainer.SimpleLoss (Dice + BCEWithLogits, pos_weight 2)
+            — the same objective this U-Net baseline was trained with.
+Save dir  : no trainer object was constructed, so no training_log.csv was written;
+            scratch_eval remains the designated scratch location and
+            checkpoints/training_log.csv was untouched.
+
+Deviation from the literal instruction, and why:
+  (a) MAFFNetTrainer.evaluate() was NOT used. That method is deep-supervision
+      specific — it indexes preds[0] on the model output, which is correct for the
+      MAFF-Net 5-tuple but would index the batch dimension of U-Net's single logits
+      tensor and produce wrong metrics. The identical metric function
+      (compute_metrics) was applied directly to the U-Net logits instead, so the
+      numbers remain directly comparable to every other run.
+  (b) Output written to experiments/unet_final_2017/metrics.json rather than
+      experiments/unet_ISIC_2017/metrics.json, because the latter directory does not
+      exist and holds no run. Writing a metrics.json into an empty new directory
+      would divorce the metrics from their checkpoint and summary. The chosen path
+      is also picked up by utils/aggregate_benchmark.py, which scans
+      experiments/*/metrics.json.
+
+
+3. STEP 3 — ARTIFACT WRITTEN AND VERIFIED
+--------------------------------------------------------------------------------
+File: experiments/unet_final_2017/metrics.json   (newly created; nothing overwritten)
+
+Results (TEST split, n = 200):
+   Dice 0.7229 | test_loss 0.7914
+   (full acc / mIoU / sensitivity / specificity / f1 stored in the file)
+Reference values already on record: validation Dice 0.6186 (summary.csv),
+   best validation Dice 0.6339 (checkpoint, epoch 13).
+
+Schema (baseline-compatible + consistent with the nine MAFF-Net files from Step 2):
+   model, dataset, split="test",
+   accuracy, dice, miou, sensitivity, specificity, f1        (flat)
+   val { acc, dice, mIoU, sensitivity, specificity, f1 }     (read from summary.csv,
+                                                              not recomputed)
+   test_loss,
+   test { acc, dice, mIoU, sensitivity, specificity, f1 }    (baseline block)
+   n_test_images, checkpoint, checkpoint_epoch, checkpoint_val_dice,
+   best_val_dice, config { ..., eval_only: true }
+
+Verification:
+   JSON readable            : OK
+   required fields present  : OK
+   split == "test"          : OK
+   model / dataset fields   : unet / ISIC_2017  OK
+   NaN / Inf                : none
+   n_test_images            : 200
+
+
+4. OBSERVATIONS (recorded, no action taken)
+--------------------------------------------------------------------------------
+- Test Dice (0.7229) exceeds validation Dice (0.6186) for this run. This is the
+  opposite of the direction seen in the MAFF-Net family and is worth noting when the
+  performance table is assembled; it is a property of the recorded run, not of this
+  evaluation.
+- This U-Net ISIC 2017 run was trained for 20 epochs (summary.csv config), whereas
+  the other canonical baselines were trained for 40. This is a comparability nuance
+  to disclose; no action taken here.
+- Directory naming for the U-Net canonical runs is inconsistent across datasets
+  (unet_ISIC_2016 / unet_final_2017 / unet_ISIC_2018).
+
+
+5. STATUS
+--------------------------------------------------------------------------------
+Evaluation performed  : YES
+metrics.json created  : YES (experiments/unet_final_2017/metrics.json)
+Retraining required   : NO
+Blocker B2 of 13_Results_Completion_Plan (U-Net ISIC 2017 TEST metrics missing)
+   => RESOLVED.
+=> U-NET 2017 TEST EVALUATION: PASS
+
+--------------------------------------------------------------------------------
+No aggregation performed, no tables regenerated (out of scope for this step).
+================================================================================

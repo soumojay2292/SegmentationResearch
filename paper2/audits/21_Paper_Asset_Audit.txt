@@ -1,0 +1,297 @@
+================================================================================
+PAPER ASSET AUDIT — Paper 2   (FINAL REVIEW LOOP 2)
+Lead Publication Readiness Reviewer (production editor + Reviewer #2)
+================================================================================
+Question: does the repository hold every asset needed to WRITE the manuscript
+          without returning to experimentation?
+Scope   : audit only. No manuscript text written, no code, no experiments, no
+          repository content modified.
+Verdict : NEEDS ASSETS. Results/metrics are freeze-ready; the surrounding asset
+          set (figures, references, three tables, and the module ablation) is not.
+================================================================================
+
+
+1. FIGURES STATUS
+--------------------------------------------------------------------------------
+Legend: READY (exists, publication-usable) | NEEDS IMPROVEMENT (asset or data
+exists but not in publishable form) | MISSING (no asset and no direct source) |
+OPTIONAL (not required for the core paper).
+
+There is NO Figures/ directory anywhere in the repository (verified). The only
+vector asset in the tree is results/2026-03-20_04-05-56/report.pdf (an old run
+report, unrelated). paper/figures/ contains only figure_captions.md. Therefore
+every author-drawn schematic named in the caption manifest is currently absent.
+
+  Fig 1  Overall architecture diagram          MISSING   caption exists; no PDF.
+  Fig 2  Frequency Branch diagram              MISSING   caption exists; no PDF.
+  Fig 3  Gated Fusion diagram                  MISSING   caption exists; no PDF.
+  --     Boundary-aware Deep Supervision (BDS) MISSING   no asset AND no caption.
+         illustration                                    Section III-H describes
+                                                         it; no figure planned.
+  --     Edge-weighted Reconstruction (EWR)    MISSING   no asset AND no caption.
+         illustration                                    Section III-H describes
+                                                         it; no figure planned.
+  --     Data pipeline figure                  MISSING   no asset, no caption. Data
+                                                         to build it exists (splits
+                                                         in audit 11).
+  --     Training pipeline figure              OPTIONAL  not referenced by any
+                                                         section or caption.
+  Fig 4  Training loss curves                  READY     loss_curve.png present for
+                                                         all 6 MAFF-Net runs
+                                                         (stabilized/maffnet x3).
+  Fig 5  Validation Dice/IoU curves            READY     iou_curve.png present for
+                                                         all 6 MAFF-Net runs.
+  Fig 6  Qualitative predictions (single model) NEEDS IMPROVEMENT
+                                                         samples/ has 15 imgs per
+                                                         MAFF-Net run (input/GT/pred)
+                                                         but only for ONE model at a
+                                                         time; usable as-is for a
+                                                         single-model panel.
+  Fig 7  Qualitative comparison ACROSS methods MISSING   caption promises a 7-column
+                                                         panel (input/GT/U-Net/Attn/
+                                                         UNet++/TransUNet/Proposed).
+                                                         No such composite exists;
+                                                         baselines have no saved
+                                                         sample predictions (only the
+                                                         MAFF-Net family wrote
+                                                         samples/). Building it needs
+                                                         an inference pass to dump
+                                                         baseline predictions — i.e.
+                                                         a figure-production step, not
+                                                         a new experiment.
+  --     Boundary comparison figure            NEEDS CREATION (data READY)
+                                                         No figure exists, but Step 7
+                                                         produced the full numeric
+                                                         basis (boundary_metrics.csv:
+                                                         HD95/ASSD/BIoU per model per
+                                                         dataset). A bar chart is a
+                                                         plotting step, no eval.
+  --     Failure-case figure                   NEEDS CREATION (data READY)
+                                                         Degenerate cases are now
+                                                         identified: empty-prediction
+                                                         images per run are counted in
+                                                         boundary_metrics.md (e.g.
+                                                         U-Net ISIC2017: 6; UNet++
+                                                         ISIC2018: 9). Rendering them
+                                                         needs a plotting pass.
+  Fig 8  Ablation visualization                MISSING + BLOCKED
+                                                         Depends on the module
+                                                         ablation experiment, which
+                                                         does NOT exist (see Tables
+                                                         section, Ablation). Cannot be
+                                                         produced without running it.
+
+  Figures READY: 2 (Fig 4, Fig 5).  Usable-with-work: 1 (Fig 6).
+  Figures MISSING/blocked: the architecture triplet (1-3), Fig 7, Fig 8, and the
+  boundary/failure/data-pipeline figures.
+
+
+2. TABLES STATUS
+--------------------------------------------------------------------------------
+Legend: READY | NEEDS UPDATE | MISSING | OPTIONAL.
+
+  Performance benchmark table        READY
+     paper2/results/final_benchmark_table.{md,csv,tex}. All values held-out TEST
+     metrics from canonical metrics.json (audit 18). This SUPERSEDES the legacy
+     paper/tables/performance_tables.md, which carries an unsourceable U-Net 2017
+     value (0.7613 vs canonical 0.7229) and a stale "—" and must be retired.
+  Boundary metrics table             READY
+     paper2/results/boundary_metrics.{md,csv,tex}. HD95/ASSD/Boundary IoU for all
+     21 canonical checkpoints (audit 20). Region/boundary consistency verified.
+  Dataset summary table              NEEDS CREATION (data READY)
+     Numbers exist (ISIC 2016 895/192/192, 2017 1600/200/200, 2018 1825/377/392;
+     384^2; binarised masks — audit 11 and reports/audits/DATASET_AUDIT.md) but no
+     formatted paper-ready table has been assembled.
+  Training configuration table       NEEDS UPDATE (partly STALE)
+     reports/audits/REPRODUCIBILITY_CHECKLIST.md holds most values, but it audits
+     the OLD train_all.py pipeline: it lists Epochs = 20, num_workers = 0, boundary
+     lambda = 0.01, warmup >= 10. The CURRENT canonical runs use train.py /
+     MAFFNetLoss with 40 epochs and lambda_bds = lambda_ewr = 0.05, warmup 5,
+     ds_weights (1,1,1,0.01) (verified in III-I / trainer.py). The checklist must be
+     reconciled to the runs that actually produced the reported numbers before it
+     backs a config table.
+  Hyperparameter table               NEEDS UPDATE
+     Same source, same staleness caveat. AMP dtype is now known to be bf16
+     (confirmed in Step 7 as the cause of the <1e-3 Dice deltas); the checklist
+     marks it "fp16 vs bf16 ambiguous".
+  Complexity / efficiency table      NEEDS UPDATE (model mismatch)
+     reports/analysis/COMPUTATIONAL_ANALYSIS.md is thorough but describes the
+     Restored/original maffnet.py: it reports ~31 M trainable params and a
+     TFLOPs-per-step budget for MMPA+FGFF+RDB. The PROPOSED model
+     (stabilized_maffnet.py) has a different trainable footprint (its contribution
+     is the dual-stream fusion, not MMPA/FGFF) and no measured params/FLOPs table of
+     its own. If a complexity table is reported it must be for the Proposed model,
+     not silently inherited from the original.
+  Ablation table                     MISSING (experiment not run)
+     paper/tables/ablation_tables.md is an honest empty placeholder. The two files
+     under reports/experiments/ (MMPA_COMPONENT_ABLATION, GAMMA_ABLATION) are NaN-
+     debugging diagnostics of the ORIGINAL model (Dice ~0.45, "diverges/NaN"), NOT
+     the proposed dual-stream ablation over {Frequency Branch, Feature Alignment,
+     Gated Fusion}. No experiment isolates the three proposed modules. This is the
+     one asset that CANNOT be produced without running experiments.
+  Hardware configuration table       NEEDS UPDATE (partial)
+     Environment is known and consistent (NVIDIA RTX 2000 Ada Generation; Python
+     3.10.20; torch 2.7.1+cu118; CUDA 11.8; Windows). Per-run hardware/time was not
+     logged during training, though Step 7 recorded per-checkpoint inference time.
+     Adequate for a single hardware-configuration paragraph; not a per-run table.
+
+  Tables READY: 2 (benchmark, boundary).  NEEDS work: 5.  Truly MISSING: 1 (ablation).
+
+
+3. APPENDIX STATUS
+--------------------------------------------------------------------------------
+  Reproducibility statement    PARTIAL — checklist exists but is stale (Tables §);
+                               reconcile to train.py before use.
+  Implementation details       READY — extensive: reports/implementation/* and
+                               reports/audits/PUBLICATION_ENGINEERING_REFERENCE.md
+                               (module traceability, equation manifest).
+  Training schedule            READY — AdamW, LinearLR->0, bf16 autocast, grad-clip
+                               1.0, 40 epochs, best-val-Dice selection (III-I,
+                               trainer.py).
+  Checkpoint description        READY — audit 14 (all 9 MAFF-Net + baselines strict-
+                               load; sizes and epochs recorded).
+  Repository structure         READY — REPOSITORY_RESTRUCTURE_REPORT.md.
+  Environment                  READY — versions above; single conda env.
+  Software versions            READY — plus MedPy 0.5.2 / SimpleITK 2.5.5 added in
+                               Step 7 for boundary metrics (record these).
+  Hardware                     PARTIAL — env-level only (see Tables, Hardware).
+  Random-seed policy           MISSING — no seed is set anywhere in the training
+                               path (grep confirms only a self-test seed in
+                               maffnet_original_reconstructed.py:692). This is not a
+                               missing asset that can be produced; it is a permanent
+                               property of the runs and MUST be disclosed as a
+                               limitation (single-run, unseeded).
+
+
+4. REFERENCE STATUS
+--------------------------------------------------------------------------------
+  CRITICAL GAP. There is NO bibliography in the repository: no .bib file, and the
+  manuscript References section is a placeholder. paper2/references/ contains only
+  four .placeholder.txt stubs (the source PDFs are not even present as files).
+
+  Required citations, none currently recorded as a reference entry:
+    - Original MAFF-Net (Zhou et al., BSPC 113 (2026) 109222) — the paper this work
+      refines; MUST be cited and positioned.
+    - SAM / SAM2 (frozen backbone).
+    - Baselines: U-Net, Attention U-Net, UNet++, TransUNet.
+    - Boundary IoU (Cheng et al., CVPR 2021) — now used in Step 7.
+    - MedPy (HD95/ASSD implementation) — now used in Step 7.
+    - Datasets: ISIC 2016, ISIC 2017, ISIC 2018 challenge references.
+    - Named-but-unimplemented comparators (SGT-Net, Swin-UNet) — cite only if
+      discussed; do NOT tabulate (audit 19 N2).
+  Missing / Unused / Duplicate / inconsistent: cannot be assessed — there is no
+  bibliography to check against. Building it from scratch is a prerequisite for
+  Sections I, II, and the Related Work discussion.
+
+
+5. MISSING ASSETS (must exist before or during writing)
+--------------------------------------------------------------------------------
+  CRITICAL (block whole sections)
+    C1  Bibliography / reference list — nothing exists (Ref §). Blocks I, II.
+    C2  Architecture figures 1-3 — author-drawn schematics, none exist. Block III.
+    C3  Ablation table + Fig 8 — experiment not run. Blocks any per-module claim in
+        III/V and the audit-19 requirement to justify the three contributions.
+        NOTE: the standing project constraint is "no additional experiments." Under
+        that constraint the ONLY compliant resolution is to DROP all per-module
+        efficacy claims and remove Tables IV-VI + Fig 8. If the claims are to be
+        kept, the constraint must be lifted for the 4-run component ablation (E2 in
+        audit 19).
+  HIGH (block specific results/discussion content)
+    C4  Cross-method qualitative figure (Fig 7) — needs baseline prediction dumps
+        (figure-production inference pass, not a new experiment).
+    C5  Dataset summary table — data ready, needs assembling.
+    C6  Training-config / hyperparameter table — reconcile stale checklist to the
+        actual train.py runs.
+    C7  Proposed-model complexity table — measure params/FLOPs for
+        stabilized_maffnet.py rather than inherit the original's numbers.
+
+
+6. OPTIONAL ASSETS (strengthen but not required)
+--------------------------------------------------------------------------------
+  O1  Boundary comparison bar chart — data ready (boundary_metrics.csv); a strong,
+      cheap figure that visualises the paper's now-measured central claim.
+  O2  Failure-case figure — degenerate/empty-prediction cases already identified in
+      Step 7; a plotting pass renders them.
+  O3  Data-pipeline schematic — nice-to-have; splits/preprocessing are documented.
+  O4  Training-pipeline schematic — not referenced anywhere; skip unless desired.
+  O5  Per-dataset training curves for ISIC 2017/2018 (already on disk) if more than
+      the ISIC 2016 curves are wanted.
+
+
+7. REPOSITORY FREEZE READINESS
+--------------------------------------------------------------------------------
+  Numerical results / metrics : FREEZE-READY.
+     - Benchmark (region) and boundary tables are complete, canonical, TEST-split,
+       and mutually consistent. No further evaluation is required for the core
+       quantitative story. Every reported number traces to experiments/*/metrics.json
+       or paper2/results/*.
+  Asset set for the manuscript : NOT FREEZE-READY.
+     - References (C1), architecture figures (C2), and three tables (C5-C7) are
+       missing or stale; the module ablation (C3) cannot exist under the no-new-
+       experiments constraint.
+  Interpretive decision still open (not an asset):
+     - Proposed-vs-Restored positioning (audit 18/19 N1) is unresolved and is
+       REINFORCED by Step 7 (Restored has lower HD95/ASSD on all three datasets).
+       This is an author decision; it gates the framing of the entire Results/
+       Discussion, so the manuscript cannot be frozen before it is made.
+
+  => FREEZE THE RESULTS LAYER now; do NOT declare a repository/manuscript freeze
+     until C1, C2, C5-C7 are produced and the N1 decision is taken.
+
+
+8. PUBLICATION READINESS CHECKLIST
+--------------------------------------------------------------------------------
+  [x] Region benchmark on held-out test, all models/datasets      (audit 18)
+  [x] Boundary metrics on held-out test, all models/datasets      (audit 20)
+  [x] Region/boundary mutual consistency verified                 (audit 20 §5)
+  [x] Checkpoints verified, strict-load                           (audit 14)
+  [x] Methodology sections III-A..III-I implementation-faithful   (audit 19: 27/27)
+  [x] Training curves + single-model qualitative samples on disk
+  [x] Implementation / traceability / equation manifest           (pub. eng. ref.)
+  [ ] Bibliography / references                                   MISSING (C1)
+  [ ] Architecture figures 1-3                                    MISSING (C2)
+  [ ] Cross-method qualitative figure (Fig 7)                     MISSING (C4)
+  [ ] Ablation table + Fig 8                                      BLOCKED (C3)
+  [ ] Dataset summary table                                       NEEDS CREATION (C5)
+  [ ] Training-config / hyperparameter table (de-staled)          NEEDS UPDATE (C6)
+  [ ] Proposed-model complexity table                             NEEDS UPDATE (C7)
+  [ ] Random-seed policy disclosed as limitation                  ACTION (write-up)
+  [ ] Legacy paper/tables/performance_tables.md retired           ACTION (write-up)
+  [ ] Proposed-vs-Restored positioning decided                    AUTHOR DECISION (N1)
+  [ ] Sections IV-VII drafted                                     PENDING on above
+
+  Score: 7 / 19 complete. The gap is asset production and one author decision, not
+  further experimentation (with the single exception of the optional module
+  ablation, C3).
+
+
+9. MANUSCRIPT DEPENDENCIES — where writing would stop
+--------------------------------------------------------------------------------
+  Abstract / I. Introduction / II. Related Work
+     STOP: no references (C1). Cannot cite the original MAFF-Net, SAM2, baselines,
+     or datasets. Highest-priority unblock.
+  III. Methodology (already drafted)
+     COMPLETE as text, but Figs 1-3 are referenced and absent (C2). Two internal
+     fixes still pending from audit 19 (III-B fused-vs-encoder; inference-time
+     reconstruction wording).
+  IV. Experimental Setup
+     Writable once C5 (dataset table), C6 (config table), and the hardware/seed
+     paragraph are settled. Data largely exists; blockers are assembly + de-staling.
+  V. Results
+     Region + boundary tables READY. STOPS on Fig 7 (C4), the ablation table/Fig 8
+     (C3), and the N1 positioning decision that determines how the headline result
+     is framed.
+  VI. Discussion
+     Failure-case material is available (O2). STOPS on the N1 decision and on
+     whatever ablation conclusion C3 resolves to.
+  VII. Conclusion
+     Writable last, once V/VI are settled.
+
+
+================================================================================
+=> PAPER ASSET AUDIT: NEEDS ASSETS
+=> Repository (results layer): FREEZE-READY
+=> Repository (full manuscript asset set): NOT READY
+Audit only. No manuscript text written, no repository content modified, no
+experiments run.
+================================================================================

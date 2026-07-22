@@ -1,0 +1,177 @@
+================================================================================
+BOUNDARY EVALUATION — Paper 2   (Execution Step 7)
+Lead Experiment Execution Engineer
+================================================================================
+Task   : evaluate all canonical checkpoints with boundary-sensitive metrics, to
+         close the weakness raised in 19_Claim_Consistency_Audit (boundary-aware
+         mechanisms proposed but only region metrics reported).
+Scope  : EVALUATION ONLY. No training, no fine-tuning, no architecture change, no
+         checkpoint regenerated, no existing experiment artifact modified.
+Result : PASS — 21/21 canonical checkpoints evaluated, 0 failures, 11.3 min total.
+Outputs: paper2/results/boundary_metrics.{md,csv,tex}
+================================================================================
+
+
+1. IMPLEMENTATION USED
+--------------------------------------------------------------------------------
+No boundary-metric code existed in the repository before this step (verified by a
+repo-wide grep for hd95/hausdorff/assd/surface_distance/boundary_iou, excluding
+src/sam2). Established libraries were used rather than any hand-rolled approximation:
+
+  HD95, ASSD : medpy.metric.binary.hd95 and .assd  (MedPy 0.5.2, installed for this
+               evaluation; pulls SimpleITK 2.5.5). MedPy is the standard reference
+               implementation of surface distances in medical image analysis.
+  Boundary   : official formulation of Cheng et al., "Boundary IoU: Improving
+  IoU          Object-Centric Image Segmentation Evaluation", CVPR 2021 —
+               IoU restricted to a boundary band of width d = round(0.02 * diag),
+               the band obtained by subtracting the morphologically eroded mask from
+               the mask. Dilation ratio 0.02 is the paper's default.
+
+  NEW CODE IS EVALUATION-ONLY and lives entirely in a scratch script; nothing was
+  added to models/, modules/, training/, or train.py. The training code is untouched.
+
+Prediction path is identical to the existing region evaluation:
+  train.SegDataset(split="test", img_size=384), batch_size 2, torch.sigmoid,
+  threshold 0.5. Each model is built exactly as train.py builds it (MAFF-Net family
+  with the SAM2.1 Hiera-Large checkpoint; the Paper-faithful Reconstruction via the
+  same _MAFFNetOriginalAdapter and placeholder encoder used in Step 2). For the
+  deep-supervision models the primary head p1 (out[0]) is used, matching evaluation.
+
+
+2. METRIC DEFINITIONS AND UNITS
+--------------------------------------------------------------------------------
+  HD95 : 95th-percentile symmetric Hausdorff distance between predicted and
+         reference lesion contours. Error measure, LOWER is better.
+  ASSD : average symmetric surface distance. Error measure, LOWER is better.
+  Boundary IoU : intersection-over-union computed only within the boundary band.
+         Overlap measure in [0,1], HIGHER is better.
+
+  UNITS: pixels on the 384x384 evaluation grid. The ISIC images are resized from
+  heterogeneous native resolutions and no physical voxel spacing is stored, so unit
+  spacing is used; HD95/ASSD are NOT in millimetres and must not be compared with
+  mm-denominated distances from other papers. They are fully comparable across the
+  models in this table, which share one grid and one protocol.
+
+  DEGENERATE CASES: HD95/ASSD are undefined if either mask is empty. Images with an
+  empty PREDICTION are excluded from the distance means and reported as n_valid < n
+  and in an "empty pred" column; no ground-truth mask in any split was empty (empty
+  GT = 0 everywhere). Boundary IoU is defined for empty predictions (it evaluates to
+  0 overlap) and uses all n images. This exclusion is disclosed, not hidden — a model
+  that leaves lesions entirely unsegmented is penalised in Dice and in n_valid, and
+  the count is printed per row.
+
+
+3. CANONICAL CHECKPOINTS EVALUATED (21/21)
+--------------------------------------------------------------------------------
+  7 models x 3 datasets. All checkpoints strict-loaded; the SAM2 backbone reported
+  "3 unexpected keys" for the MAFF-Net/Proposed families, which is the known benign
+  FPN-head mismatch already documented in 14_Checkpoint_Verification and does not
+  affect the encoder weights used for inference.
+
+  Baselines : U-Net, Attention U-Net, UNet++, TransUNet
+  MAFF-Net  : Paper-faithful Reconstruction, Restored, Proposed
+  Datasets  : ISIC 2016 (n=192), ISIC 2017 (n=200), ISIC 2018 (n=392)
+
+  Per-checkpoint results (mean; px for HD95/ASSD):
+    Dataset    Model                             HD95     ASSD    B-IoU   n_valid
+    ISIC2016   U-Net                             61.976   22.527  0.3195  192/192
+    ISIC2016   Attention U-Net                   50.465   18.221  0.2436  192/192
+    ISIC2016   UNet++                            48.244   18.341  0.3283  190/192
+    ISIC2016   TransUNet                         43.779   16.368  0.2898  192/192
+    ISIC2016   MAFF-Net (Paper-faithful Recon.)  24.678   10.053  0.4101  191/192
+    ISIC2016   MAFF-Net (Restored)          *B*  21.979    8.336  0.4518  192/192
+    ISIC2016   MAFF-Net (Proposed)               23.329    8.510  0.4514  192/192
+    ISIC2017   U-Net                             60.572   23.027  0.3560  194/200
+    ISIC2017   Attention U-Net                   40.745   17.004  0.3749  198/200
+    ISIC2017   UNet++                            42.561   15.603  0.4244  197/200
+    ISIC2017   TransUNet                         26.750    9.710  0.4585  200/200
+    ISIC2017   MAFF-Net (Paper-faithful Recon.)  24.210    9.409  0.4806  200/200
+    ISIC2017   MAFF-Net (Restored)          *B*  16.788    6.565  0.5255  200/200
+    ISIC2017   MAFF-Net (Proposed)               16.869    6.645  0.5277  200/200  (best B-IoU)
+    ISIC2018   U-Net                             72.867   29.454  0.2958  388/392
+    ISIC2018   Attention U-Net                   47.746   19.645  0.3035  385/392
+    ISIC2018   UNet++                            63.710   25.348  0.2672  383/392
+    ISIC2018   TransUNet                         41.836   15.092  0.3406  392/392
+    ISIC2018   MAFF-Net (Paper-faithful Recon.)  23.136    9.606  0.4491  390/392
+    ISIC2018   MAFF-Net (Restored)          *B*  20.570    8.199  0.4701  392/392
+    ISIC2018   MAFF-Net (Proposed)               22.554    9.240  0.4611  391/392
+  *B* = best on that dataset for HD95 and ASSD.
+
+
+4. FAILURES
+--------------------------------------------------------------------------------
+  None. 21/21 succeeded (background job exit code 0).
+
+
+5. PIPELINE-IDENTITY CHECK
+--------------------------------------------------------------------------------
+  During the boundary pass a batch-weighted Dice was accumulated with the identical
+  training.trainer.compute_metrics call used by the region evaluation, on the same
+  predictions. All 21 recomputed Dice values agree with the recorded metrics.json
+  Dice within 1e-3; the maximum absolute deviation is 4.26e-4 (transunet_ISIC_2018).
+  The recorded values were produced under mixed-precision (bf16) autocast while this
+  pass recomputes in fp32, which accounts for the sub-1e-3 differences. This confirms
+  the boundary metrics were computed on the same predictions that back the published
+  region results — the two tables are mutually consistent.
+
+
+6. EXECUTION TIME
+--------------------------------------------------------------------------------
+  Total wall clock: 11.3 min (676.1 s) on NVIDIA RTX 2000 Ada Generation.
+  Per checkpoint: 16-59 s. No GPU time spent on training.
+
+
+7. SCIENTIFIC READING (recorded; the manuscript author decides how to use it)
+--------------------------------------------------------------------------------
+  a) The boundary metrics SUPPORT the paper's central thesis for the first time. On
+     every dataset all three MAFF-Net variants beat all four baselines on HD95, ASSD
+     and Boundary IoU by a wide margin (e.g. ISIC 2018 HD95: best baseline TransUNet
+     41.8 px vs Restored 20.6 px, a ~51% reduction). The boundary-aware family is
+     boundary-superior under boundary metrics, which is exactly the claim that was
+     previously unmeasured.
+  b) The Proposed-vs-Restored question from audit 18/19 PERSISTS and, if anything,
+     sharpens. Restored has the lower HD95 and ASSD on all three datasets; Proposed
+     wins Boundary IoU only on ISIC 2017 (0.5277 vs 0.5255) and is essentially tied
+     on ISIC 2016 (0.4514 vs 0.4518). So boundary metrics do NOT rescue a "Proposed
+     is best" claim — they reinforce that Restored is the stronger model overall. The
+     positioning decision flagged in audit 19 (N1) is still required and is unchanged.
+  c) These are single-run, unseeded results (same caveat as every other number in the
+     project); no significance is claimed. The Proposed/Restored gaps here are small
+     relative to the per-image std (e.g. HD95 std ~21-30 px), so they should not be
+     described as meaningful differences without multi-seed variance.
+  d) TransUNet is the strongest baseline on boundary metrics, consistent with its
+     strong region performance; U-Net is the weakest, with the most empty predictions.
+
+
+8. VERIFICATION
+--------------------------------------------------------------------------------
+  all checkpoints evaluated                 PASS  (21/21)
+  no checkpoint retrained                   PASS  (inference only; training code and
+                                                   all model.pth files untouched)
+  no model modified                         PASS  (no edit to models/ modules/
+                                                   training/ train.py; new code is
+                                                   scratch, evaluation-only)
+  metrics from TEST split only              PASS  (SegDataset split="test" for all;
+                                                   n matches dataset_split/*/test.csv:
+                                                   192 / 200 / 392)
+  established implementations only          PASS  (MedPy HD95/ASSD; Cheng et al.
+                                                   Boundary IoU; no approximation)
+  region/boundary mutual consistency        PASS  (21/21 Dice agree within 1e-3)
+
+
+9. STATUS
+--------------------------------------------------------------------------------
+Checkpoints evaluated : 21 / 21
+Failures              : 0
+Boundary metrics      : HD95, ASSD, Boundary IoU
+Retraining performed  : NONE
+=> BOUNDARY EVALUATION: PASS
+
+Resolves the boundary-metric gap identified in 19_Claim_Consistency_Audit section 0
+(the "highest-value outstanding experiment"). Does NOT resolve the Proposed-vs-
+Restored positioning question (audit 19 N1), which is an author decision and is
+reinforced, not settled, by these results.
+
+--------------------------------------------------------------------------------
+No training, no fine-tuning, no model or checkpoint modified, evaluation only.
+================================================================================
