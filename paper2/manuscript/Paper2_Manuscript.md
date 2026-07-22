@@ -1,10 +1,12 @@
-# [TITLE — placeholder]
+# A Dual-Stream Spatial–Spectral Fusion Pathway for Boundary Fidelity in Dermoscopic Skin Lesion Segmentation
 
 ## Abstract
-[Abstract — placeholder]
+
+Accurate delineation of lesion boundaries remains a fundamental difficulty in dermoscopic image segmentation, where gradual lesion-to-skin transitions, irregular margins, and occluding structures such as hair make the contour the least certain part of any prediction. Segmentation methods are nevertheless optimised and assessed predominantly by region-overlap criteria, which are area-based and respond only weakly to displacement of the contour; boundary-relevant content is commonly merged with contextual information in a single representation dominated by the lesion interior. This paper presents a targeted refinement of the MAFF-Net framework in which the pretrained encoder, decoder, and auxiliary reconstruction branch are retained and only the fusion pathway is redesigned. Multi-scale features from a frozen foundation backbone are processed along two parallel streams, a spatial stream that preserves contextual structure and a parameter-free frequency stream that emphasises boundary-sensitive spectral content; their statistics are reconciled before they are merged by a learned, spatially varying gate. The method was evaluated on three public dermoscopic benchmarks against four segmentation architectures under an identical protocol, using region-based and boundary-based measures in combination, and each introduced component was isolated by a leave-one-out ablation. Removing any component degraded all boundary measures while leaving region overlap substantially unchanged. The contribution is accordingly characterised as an improvement in boundary fidelity rather than region overlap, and indicates that region-overlap criteria alone are insufficient to assess methods acting upon the lesion margin. All results derive from single training runs, and no claim of statistical significance is made.
 
 ## Keywords
-[Keywords — placeholder]
+
+Skin lesion segmentation; dermoscopy; boundary fidelity; frequency-domain representation; gated feature fusion; frozen foundation model; deep supervision; ISIC.
 
 ---
 
@@ -222,7 +224,7 @@ The objective in Eq. (7) is minimized over the trainable parameters of the netwo
 
 IV-A. Datasets
 
-The proposed framework is evaluated on three publicly available dermoscopic skin-lesion segmentation benchmarks released through the International Skin Imaging Collaboration (ISIC): ISIC 2016, ISIC 2017, and ISIC 2018. Each benchmark provides dermoscopic images of pigmented skin lesions together with expert-annotated binary masks that delineate the lesion region from the surrounding skin. The three datasets differ in scale and in the diversity of lesion appearance, and together they span the range of imaging conditions — low lesion-to-skin contrast, diffuse or irregular boundaries, and occlusion by hair and other structures — that motivate the boundary-oriented design described in Section III. Evaluating across all three benchmarks allows the behaviour of the network to be assessed under progressively larger and more heterogeneous data rather than on a single collection.
+The proposed framework is evaluated on three publicly available dermoscopic skin-lesion segmentation benchmarks released through the International Skin Imaging Collaboration (ISIC): ISIC 2016 [17], ISIC 2017 [18], and ISIC 2018 [19]. Each benchmark provides dermoscopic images of pigmented skin lesions together with expert-annotated binary masks that delineate the lesion region from the surrounding skin. The three datasets differ in scale and in the diversity of lesion appearance, and together they span the range of imaging conditions — low lesion-to-skin contrast, diffuse or irregular boundaries, and occlusion by hair and other structures — that motivate the boundary-oriented design described in Section III. Evaluating across all three benchmarks allows the behaviour of the network to be assessed under progressively larger and more heterogeneous data rather than on a single collection.
 
 Each dataset is partitioned into disjoint training, validation, and test subsets, and these partitions are held fixed throughout all experiments so that no image contributes to more than one subset. For ISIC 2016 the partition comprises 895 training, 192 validation, and 192 test images; for ISIC 2017, 1600 training, 200 validation, and 200 test images; and for ISIC 2018, 1825 training, 377 validation, and 392 test images. The validation subset is used exclusively for model selection, and the test subset is reserved for final evaluation and is never consulted during training or checkpoint selection. This separation ensures that all reported comparisons are made on data unseen during optimisation.
 
@@ -453,4 +455,41 @@ The principal limitations of the study indicate the directions in which it shoul
 ---
 
 # References
-[References — placeholder]
+
+[1] J. Long, E. Shelhamer, and T. Darrell, "Fully convolutional networks for semantic segmentation," in *Proc. IEEE Conf. Computer Vision and Pattern Recognition (CVPR)*, 2015, pp. 3431–3440.
+
+[2] O. Ronneberger, P. Fischer, and T. Brox, "U-Net: Convolutional networks for biomedical image segmentation," in *Proc. Medical Image Computing and Computer-Assisted Intervention (MICCAI)*, 2015, pp. 234–241.
+
+[3] Z. Zhou, M. M. R. Siddiquee, N. Tajbakhsh, and J. Liang, "UNet++: A nested U-Net architecture for medical image segmentation," in *Deep Learning in Medical Image Analysis (DLMIA) Workshop, MICCAI*, 2018, pp. 3–11.
+
+[4] J. Hu, L. Shen, and G. Sun, "Squeeze-and-excitation networks," in *Proc. IEEE Conf. Computer Vision and Pattern Recognition (CVPR)*, 2018, pp. 7132–7141.
+
+[5] O. Oktay, J. Schlemper, L. Le Folgoc, M. Lee, M. Heinrich, K. Misawa, K. Mori, S. McDonagh, N. Y. Hammerla, B. Kainz, B. Glocker, and D. Rueckert, "Attention U-Net: Learning where to look for the pancreas," in *Medical Imaging with Deep Learning (MIDL)*, 2018.
+
+[6] A. Dosovitskiy, L. Beyer, A. Kolesnikov, D. Weissenborn, X. Zhai, T. Unterthiner, M. Dehghani, M. Minderer, G. Heigold, S. Gelly, J. Uszkoreit, and N. Houlsby, "An image is worth 16×16 words: Transformers for image recognition at scale," in *Proc. Int. Conf. Learning Representations (ICLR)*, 2021.
+
+[7] J. Chen, Y. Lu, Q. Yu, X. Luo, E. Adeli, Y. Wang, L. Lu, A. L. Yuille, and Y. Zhou, "TransUNet: Transformers make strong encoders for medical image segmentation," *arXiv preprint* arXiv:2102.04306, 2021.
+
+[8] H. Cao, Y. Wang, J. Chen, D. Jiang, X. Zhang, Q. Tian, and M. Wang, "Swin-Unet: Unet-like pure transformer for medical image segmentation," in *Proc. European Conf. Computer Vision (ECCV) Workshops*, 2022, pp. 205–218.
+
+[9] A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao, S. Whitehead, A. C. Berg, W.-Y. Lo, P. Dollár, and R. Girshick, "Segment anything," in *Proc. IEEE/CVF Int. Conf. Computer Vision (ICCV)*, 2023, pp. 4015–4026.
+
+[10] N. Ravi, V. Gabeur, Y.-T. Hu, R. Hu, C. Ryali, T. Ma, H. Khedr, R. Rädle, C. Rolland, L. Gustafson, E. Mintun, J. Pan, K. V. Alwala, N. Carion, C.-Y. Wu, R. Girshick, P. Dollár, and C. Feichtenhofer, "SAM 2: Segment anything in images and videos," *arXiv preprint* arXiv:2408.00714, 2024.
+
+[11] J. Ma, Y. He, F. Li, L. Han, C. You, and B. Wang, "Segment anything in medical images," *Nature Communications*, vol. 15, art. no. 654, 2024.
+
+[12] L. Chi, B. Jiang, and Y. Mu, "Fast Fourier convolution," in *Advances in Neural Information Processing Systems (NeurIPS)*, vol. 33, 2020, pp. 4479–4488.
+
+[13] Y. Rao, W. Zhao, Z. Zhu, J. Lu, and J. Zhou, "Global filter networks for image classification," in *Advances in Neural Information Processing Systems (NeurIPS)*, vol. 34, 2021, pp. 980–993.
+
+[14] H. Kervadec, J. Bouchtiba, C. Desrosiers, E. Granger, J. Dolz, and I. Ben Ayed, "Boundary loss for highly unbalanced segmentation," *Medical Image Analysis*, vol. 67, art. no. 101851, 2021.
+
+[15] B. Cheng, R. Girshick, P. Dollár, A. C. Berg, and A. Kirillov, "Boundary IoU: Improving object-centric image segmentation evaluation," in *Proc. IEEE/CVF Conf. Computer Vision and Pattern Recognition (CVPR)*, 2021, pp. 15334–15342.
+
+[16] Y. Zhou, H. Gong, R. Qiu, S. Wei, Z. Li, and W. Zhang, "MAFF-Net: SAM-powered mixed multi-scale perception adaptation and frequency-guided feature fusion for robust skin lesion segmentation," *Biomedical Signal Processing and Control*, vol. 113, art. no. 109222, 2026.
+
+[17] D. Gutman, N. C. F. Codella, E. Celebi, B. Helba, M. Marchetti, N. Mishra, and A. Halpern, "Skin lesion analysis toward melanoma detection: A challenge at the International Symposium on Biomedical Imaging (ISBI) 2016, hosted by the International Skin Imaging Collaboration (ISIC)," *arXiv preprint* arXiv:1605.01397, 2016.
+
+[18] N. C. F. Codella, D. Gutman, M. E. Celebi, B. Helba, M. A. Marchetti, S. W. Dusza, A. Kalloo, K. Liopyris, N. Mishra, H. Kittler, and A. Halpern, "Skin lesion analysis toward melanoma detection: A challenge at the 2017 International Symposium on Biomedical Imaging (ISBI), hosted by the International Skin Imaging Collaboration (ISIC)," in *Proc. IEEE Int. Symp. Biomedical Imaging (ISBI)*, 2018, pp. 168–172.
+
+[19] N. Codella, V. Rotemberg, P. Tschandl, M. E. Celebi, S. Dusza, D. Gutman, B. Helba, A. Kalloo, K. Liopyris, M. Marchetti, H. Kittler, and A. Halpern, "Skin lesion analysis toward melanoma detection 2018: A challenge hosted by the International Skin Imaging Collaboration (ISIC)," *arXiv preprint* arXiv:1902.03368, 2019.
