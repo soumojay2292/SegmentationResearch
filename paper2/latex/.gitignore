@@ -1,0 +1,15 @@
+# LaTeX build products
+output/*
+!output/.gitkeep
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+main.pdf

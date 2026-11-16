@@ -1,0 +1,343 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath("."))
+sys.path.insert(1, os.path.abspath("src/sam2"))
+
+import argparse
+from pathlib import Path
+import torch
+from torch.utils.data import DataLoader
+import torchvision.transforms as T
+import torchvision.transforms.functional as TF
+from torchvision.transforms import InterpolationMode
+import random
+from PIL import Image
+import numpy as np
+from tqdm import tqdm   # ✅ NEW
+
+from models.maffnet import MAFFNet
+from models.stabilized_maffnet import StabilizedMAFFNet
+from models.maffnet_original_reconstructed import MAFFNetOriginalReconstructed
+from models.attention_unet import AttentionUNet
+from models.unet_plus_plus import UNetPlusPlus
+from models.unet import UNet
+from models.transunet import TransUNet
+from training.trainer import MAFFNetTrainer
+from training.simple_trainer import SimpleTrainer
+
+
+class _LogitWrapper(torch.nn.Module):
+    """Converts probability outputs (sigmoid already applied) to logits.
+
+    Needed for UNet, which applies sigmoid internally, so that SimpleLoss
+    and compute_metrics receive raw logits as expected.
+    """
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        probs = self.model(x).clamp(1e-6, 1 - 1e-6)
+        return torch.logit(probs)
+
+
+class _MAFFNetOriginalAdapter(torch.nn.Module):
+    """Pipeline compatibility shim for ``MAFFNetOriginalReconstructed``.
+
+    ``MAFFNetTrainer``/``MAFFNetLoss`` expect ``model(imgs)`` to return the
+    5-tuple ``(p1, p2, p3, p4, rec)`` (and use ``preds[0]`` for metrics), exactly
+    like ``MAFFNet`` and ``StabilizedMAFFNet``. The reconstructed model instead
+    returns a dict in train mode and a single ``p1`` tensor in eval mode. This
+    shim converts those outputs to the expected tuple WITHOUT modifying the
+    wrapped model, its layers, tensor flow, or its loss:
+
+      * train  : dict ``{segmentation_logits:[p1..p4], reconstruction:rec}`` -> tuple
+      * eval   : tensor ``p1`` -> ``(p1, p1, p1, p1, zeros_rec)`` so the trainer's
+                 val-loss unpack and ``preds[0]`` metric path both work.
+
+    The reconstructed model's own Dice+MSE loss is not invoked here; the trainer
+    drives it with the existing ``MAFFNetLoss``, as it does for the other
+    maffnet-family models. The architecture is untouched.
+    """
+
+    def __init__(self, model: torch.nn.Module):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: torch.Tensor):
+        out = self.model(x)
+        if isinstance(out, dict):                      # training path
+            p1, p2, p3, p4 = out["segmentation_logits"]
+            return p1, p2, p3, p4, out["reconstruction"]
+        # evaluation path: model returns only p1
+        p1 = out
+        rec = torch.zeros(p1.size(0), 3, p1.size(2), p1.size(3),
+                          device=p1.device, dtype=p1.dtype)
+        return p1, p1, p1, p1, rec
+
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+
+class SegDataset(torch.utils.data.Dataset):
+    def __init__(self, csv_path: str, split: str = "train", img_size: int = 384):
+        import csv as _csv
+
+        self.split    = split
+        self.img_size = img_size
+        self.samples  = []
+
+        # 🔥 base dirs (IMPORTANT FIX)
+        dataset_root = Path(csv_path).parent  
+        self.img_dir  = dataset_root / self.split / "images"
+        self.mask_dir = dataset_root / self.split / "masks"
+
+        with open(csv_path) as f:
+            reader = _csv.DictReader(f)
+            for row in reader:
+                self.samples.append((row["image"], row["mask"]))
+
+    def _augment(self, img, mask):
+        if random.random() > 0.5:
+            img, mask = TF.hflip(img), TF.hflip(mask)
+        if random.random() > 0.5:
+            img, mask = TF.vflip(img), TF.vflip(mask)
+
+        angle = random.uniform(-30, 30)
+        img   = TF.rotate(img, angle, interpolation=InterpolationMode.BILINEAR)
+        mask  = TF.rotate(mask, angle, interpolation=InterpolationMode.NEAREST)
+
+        if random.random() > 0.5:
+            params = T.RandomAffine.get_params(
+                degrees=(-15, 15), translate=(0.1, 0.1),
+                scale_ranges=(0.9, 1.1), shears=(-5, 5),
+                img_size=[self.img_size, self.img_size]
+            )
+            img  = TF.affine(img,  *params, interpolation=InterpolationMode.BILINEAR)
+            mask = TF.affine(mask, *params, interpolation=InterpolationMode.NEAREST)
+
+        img = T.ColorJitter(0.2, 0.2, 0.2, 0.1)(img)
+        return img, mask
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        img_name, mask_name = self.samples[idx]
+
+        # 🔥 FIX: correct full path
+        img_path  = self.img_dir / img_name
+        mask_path = self.mask_dir / mask_name
+
+        img  = Image.open(img_path).convert("RGB")
+        mask = Image.open(mask_path).convert("L")
+
+        img  = img.resize((self.img_size, self.img_size), Image.BILINEAR)
+        mask = mask.resize((self.img_size, self.img_size), Image.NEAREST)
+
+        if self.split == "train":
+            img, mask = self._augment(img, mask)
+
+        img_t  = T.ToTensor()(img)
+        mask_t = torch.from_numpy(
+            np.array(mask, dtype=np.float32) / 255.0
+        ).unsqueeze(0)
+
+        mask_t = (mask_t > 0.5).float()
+        return img_t, mask_t
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--model", default="maffnet",
+                   choices=["maffnet", "stabilized_maffnet", "maffnet_original_reconstructed",
+                            "attention_unet", "unetpp", "unet", "transunet"],
+                   help="Model architecture to train")
+    p.add_argument("--dataset", default="ISIC_2018")
+    p.add_argument("--data_root", default="dataset_split")
+    p.add_argument("--epochs", type=int, default=5)
+    p.add_argument("--patience", type=int, default=10,
+                   help="Early-stopping patience on val dice (SimpleTrainer models). "
+                        "Set <=0 to disable.")
+    p.add_argument("--batch_size", type=int, default=2)
+    p.add_argument("--lr", type=float, default=1e-3)
+    p.add_argument("--weight_decay", type=float, default=0.01)
+    p.add_argument("--img_size", type=int, default=384)
+    p.add_argument("--fast", action="store_true")
+    p.add_argument("--workers", type=int, default=2)
+    p.add_argument("--checkpoint", default=None)
+    p.add_argument("--resume", default=None)
+    p.add_argument("--save_dir", default="checkpoints")
+    p.add_argument("--exp", default="experiment",
+                   help="Experiment name; outputs go to experiments/<exp>")
+    return p.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Experiment helpers
+# ---------------------------------------------------------------------------
+
+def _write_config(exp_dir: Path, args) -> None:
+    with open(exp_dir / "config.txt", "w") as f:
+        f.write(f"model:      {args.model}\n")
+        if args.model == "maffnet":
+            f.write(f"backbone:   SAM2 Hiera-Large\n")
+        f.write(f"dataset:    {args.dataset}\n")
+        f.write(f"epochs:     {args.epochs}\n")
+        f.write(f"batch_size: {args.batch_size}\n")
+        f.write(f"img_size:   {args.img_size}\n")
+        f.write(f"lr:         {args.lr}\n")
+
+
+# ---------------------------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------------------------
+
+def main():
+    args = parse_args()
+
+    if args.fast:
+        args.epochs = 3
+        args.batch_size = 2
+        args.img_size = 224
+
+    exp_dir = Path("experiments") / args.exp
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Experiment → {exp_dir}")
+    _write_config(exp_dir, args)
+
+    root = Path(args.data_root) / args.dataset
+
+    def make_loader(split, shuffle):
+        csv_path = root / f"{split}.csv"
+        ds = SegDataset(str(csv_path), split=split, img_size=args.img_size)
+        return DataLoader(
+            ds,
+            batch_size=args.batch_size,
+            shuffle=shuffle,
+            num_workers=args.workers,
+            pin_memory=True,
+        )
+
+    train_loader = make_loader("train", True)
+    val_loader   = make_loader("val", False)
+
+    # Held-out test split (best model evaluated on it; metrics go to metrics.json)
+    test_csv   = root / "test.csv"
+    test_loader = make_loader("test", False) if test_csv.is_file() else None
+    if test_loader is None:
+        print(f"[warn] no test.csv at {test_csv} — skipping test evaluation")
+
+    patience = args.patience if args.patience and args.patience > 0 else None
+
+    if args.model == "maffnet":
+        print("Building MAFFNet with SAM2 Hiera-Large backbone …")
+        model   = MAFFNet(checkpoint=args.checkpoint)
+        trainer = MAFFNetTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "stabilized_maffnet":
+        print("Building Stabilized MAFFNet (SAM2 + frequency branch + gated fusion) …")
+        model   = StabilizedMAFFNet(checkpoint=args.checkpoint)
+        trainer = MAFFNetTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "maffnet_original_reconstructed":
+        print("Building MAFFNetOriginalReconstructed (paper-faithful reproduction) …")
+        base    = MAFFNetOriginalReconstructed(sam_checkpoint=args.checkpoint)
+        model   = _MAFFNetOriginalAdapter(base)   # 5-tuple interface shim
+        trainer = MAFFNetTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+        )
+    elif args.model == "attention_unet":
+        print("Building Attention U-Net …")
+        model   = AttentionUNet()
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="attention_unet",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
+        )
+    elif args.model == "unetpp":
+        print("Building UNet++ …")
+        model   = UNetPlusPlus()
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="unetpp",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
+        )
+    elif args.model == "unet":
+        print("Building U-Net …")
+        model   = UNet()
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="unet",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
+        )
+    elif args.model == "transunet":
+        print("Building TransUNet …")
+        model   = TransUNet()
+        trainer = SimpleTrainer(
+            model=model,
+            train_loader=train_loader,
+            val_loader=val_loader,
+            model_name="transunet",
+            save_dir=args.save_dir,
+            num_epochs=args.epochs,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            patience=patience,
+            test_loader=test_loader,
+        )
+    else:
+        raise ValueError(f"Unknown model: {args.model}")
+
+    trainer.train(config=vars(args), exp_dir=exp_dir)
+    print("\nTraining finished.")
+
+
+if __name__ == "__main__":
+    main()

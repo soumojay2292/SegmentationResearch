@@ -33,9 +33,7 @@ dataset/
 dataset_raw/
 dataset_split/
 
-# Ignore checkpoints and results
-checkpoints/
-runs/
+
 
 # Ignore images and masks inside datasets
 *.jpg
@@ -44,7 +42,6 @@ runs/
 *.tif
 *.bmp
 
-# Ignore model weights
-*.pth
+
 
 

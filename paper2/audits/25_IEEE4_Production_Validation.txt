@@ -1,0 +1,102 @@
+================================================================================
+PHASE IEEE-4 — PRODUCTION VALIDATION (publication-quality audit)
+================================================================================
+Project : paper2/latex/  (IEEEtran journal, two-column)
+Scope   : review-only; formatting fixes applied where a rendering issue required.
+Compiler: NONE installed on this machine (pdflatex/latexmk/bibtex/tectonic/miktex
+          all absent after a broad filesystem sweep). Validation is STATIC plus
+          width analysis; a real compile was NOT run here. Overleaf/TeX Live/
+          MiKTeX ready.
+
+--------------------------------------------------------------------------------
+ISSUES FOUND
+--------------------------------------------------------------------------------
+[FIXED] I1  Equation (11) rendering — Sensitivity and Specificity were set
+            side-by-side with \qquad on one line (~3.3 in), borderline-to-
+            overflow in a 3.5 in IEEE column. Reformatted as a stacked
+            equation+aligned sharing the single number (11), aligned at "=".
+            Science unchanged (same two definitions, same number).
+            File: sections/experiments.tex
+
+[FIXED] I2  Fig. 4 (qualitative, tall figure*) used [!t]; a very tall starred
+            float that cannot top-fit a text page can trigger "Float too large".
+            Changed to [!tp] so it may fall to a dedicated float page.
+            File: sections/results.tex
+
+[ACTION REQUIRED — NOT fabricated] I3  Front-matter metadata is placeholder:
+            \author (First/Second Author), affiliation ("Department of
+            Placeholder"), e-mails (example.edu), and \markboth journal
+            ("IEEE Transactions on Placeholder, Vol. XX, No. XX, Month 2026").
+            These are content, not format; they must be filled with the real
+            author/affiliation/target-journal (or intentionally anonymised for
+            double-blind review) before submission. Left as-is — not invented.
+            File: main.tex
+
+[VERIFY ON FIRST COMPILE — engineered, not an error] I4  Wide tables:
+            Table I (7 col) and Table III (7 col) are set \footnotesize/\small
+            with \tabcolsep 5-6pt. Width estimate ~6.7-6.9 in < \textwidth
+            (~7.16 in) => expected to fit table* with no overflow; confirm on
+            first compile. Long single-line equations (2, 12, 13) fit a column
+            in a normal IEEE setting; eyeball after compile.
+
+[INFO] I5  Package "subcaption" is loaded but currently unused (each figure is
+            one composite PDF). Harmless; retained for possible multi-panel use.
+
+--------------------------------------------------------------------------------
+VALIDATION MATRIX
+--------------------------------------------------------------------------------
+1. IEEE FORMATTING
+   [PASS] two-column: \documentclass[journal]{IEEEtran} (two-column by default)
+   [PASS] fonts/margins governed by official IEEEtran.cls (no manual overrides)
+   [PASS] float placement: figure/table use [!t]; tall Fig.4 uses [!tp]
+   [PASS] package load order correct (cite ... graphicx ... hyperref last)
+
+2. FIGURES
+   [PASS] numbering 1-6; auto-order gives 4=qualitative,5=region,6=boundary
+   [PASS] placement: Fig.1/4/5/6 span both columns (figure*); Fig.2/3 single col
+   [PASS] vector format: diagram/graph figures are PDF from SVG (vector);
+          Fig.4 is inherently raster (embedded dermoscopy photos) — acceptable
+   [PASS] caption below graphic (IEEE style); every figure has \caption+\label
+   [NOTE] figure internal font readability is a property of the source PDFs
+          (generated in earlier phases); not altered here
+
+3. TABLES
+   [PASS] booktabs on all three (\toprule/\midrule/\bottomrule; no vertical rules)
+   [PASS] caption above tabular (IEEE style)
+   [PASS] spacing set (\tabcolsep, \footnotesize/\small); width < \textwidth
+   [PASS] no \multicolumn misuse; \multirow used for dataset grouping
+
+4. EQUATIONS
+   [PASS] 14 environments; numbers 1,2,3,4a,4b,5..13 via \tag
+   [PASS] alignment: single-line centred; Eq.11 now stacked & aligned at "="
+   [PASS] in-text \eqref{eq:3,4b,5,6,7} all resolve
+
+5. REFERENCES
+   [PASS] BibTeX: 23 entries, keys ref1..ref23; required fields present per type
+   [PASS] IEEE style via \bibliographystyle{IEEEtran}
+   [PASS] no duplicate keys; no duplicate entries
+   [PASS] no missing citations (23 cited = 23 defined); no uncited entries
+   [PASS] accented names LaTeX-escaped (Doll\'ar, R\"adle, Ib\'a\~nez)
+
+6. CROSS-REFERENCES
+   [PASS] figures: Fig.~\ref{fig:*} (6) resolve
+   [PASS] tables:  Table~\ref{tab:*} (3) resolve
+   [PASS] equations: \eqref{eq:*} resolve
+   [PASS] sections: literal "Section III-H" etc. match IEEEtran auto-numbering
+   [PASS] 0 dangling \ref/\eqref; 0 duplicate \label (30 unique labels)
+
+7. COMPILATION
+   [NOT RUN] no TeX toolchain on this machine. Static checks pass; build with
+             pdflatex -> bibtex -> pdflatex x2 (or latexmk -pdf main.tex).
+   [PASS-static] no unresolved \ref/\cite; all 6 graphics present on disk.
+
+--------------------------------------------------------------------------------
+CONCLUSION
+--------------------------------------------------------------------------------
+The manuscript is PUBLICATION-READY in IEEE LaTeX format at the structural and
+formatting level: every figure, table, equation, citation, and cross-reference
+is present and resolves; IEEE style is followed throughout. Two remaining items
+are outside a static audit's reach: (a) a first compile on Overleaf/TeX to
+confirm zero warnings and visual float/width fit, and (b) filling the placeholder
+author/affiliation/journal metadata (I3). Neither was fabricated or forced.
+================================================================================

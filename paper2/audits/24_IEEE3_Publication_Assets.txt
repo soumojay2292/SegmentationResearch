@@ -1,0 +1,81 @@
+================================================================================
+PHASE IEEE-3 — PUBLICATION ASSETS INTEGRATION & VALIDATION
+================================================================================
+Project : paper2/latex/  (IEEEtran journal manuscript)
+Source  : paper2/manuscript/Paper2_Manuscript.md  (single source of truth)
+Method  : static validation (no TeX distribution installed on this machine;
+          real compile not performed here — Overleaf / TeX Live / MiKTeX ready).
+
+--------------------------------------------------------------------------------
+ASSETS INTEGRATED
+--------------------------------------------------------------------------------
+Figures (6)  — all as floats with \includegraphics, caption, and \label:
+  Fig. 1  fig:architecture  Figure1_Architecture.pdf                  (figure*)
+  Fig. 2  fig:freqbranch    Figure2_FrequencyBranch.pdf               (figure)
+  Fig. 3  fig:fafusion      Figure3_FeatureAlignment_GatedFusion.pdf  (figure)
+  Fig. 4  fig:qualitative   Figure4_QualitativeComparison.pdf         (figure*)
+  Fig. 5  fig:region        Figure5_RegionMetrics.pdf                 (figure*)
+  Fig. 6  fig:boundary      Figure6_BoundaryMetrics.pdf               (figure*)
+  All 6 PDFs present in paper2/latex/figures/.
+
+Tables (3)  — booktabs (\toprule/\midrule/\bottomrule), caption above tabular:
+  Table I    tab:benchmark  Region metrics, 21 rows, \multirow per dataset
+  Table II   tab:boundary   Boundary metrics, 21 rows, n_valid/n column
+  Table III  tab:ablation   Leave-one-out ablation (ISIC 2018), 4 rows
+
+Equations (14) — \begin{equation} + \tag{n} + \label{eq:n}:
+  Tags: 1, 2, 3, 4a, 4b, 5, 6, 7, 8, 9, 10, 11, 12, 13
+  In-text \eqref used for: eq:3, eq:4b, eq:5, eq:6, eq:7.
+
+References (23) — references.bib rebuilt (BibTeX), keys ref1..ref23:
+  Placeholder entries (placeholder_a/b) removed.
+  @article x 12, @inproceedings x 11. Accented names LaTeX-escaped
+  (Doll\'ar, R\"adle, Ib\'a\~nez). Titles brace-protected for case.
+
+Cross-references:
+  In-text [n]      -> \cite{refn}  (grouped runs merged, e.g. [9],[10] -> \cite{ref9,ref10})
+  Table I/II/III   -> Table~\ref{tab:...}
+  Figure/Fig. n    -> Fig.~\ref{fig:...}
+  Eq. (n)/Equation -> \eqref{eq:...}
+  Section III-H etc.-> kept as literal text (matches IEEEtran auto-numbering)
+
+--------------------------------------------------------------------------------
+VALIDATION RESULTS  (validate_assets.py)
+--------------------------------------------------------------------------------
+LABELS / CROSS-REFERENCES
+  [PASS] 30 unique \label, no duplicates
+  [PASS] all 23 \ref/\eqref uses resolve to a defined \label (0 missing)
+  Unused labels (expected): equation labels not cited in prose, and sec:*
+         labels (section references are literal text) — harmless.
+
+CITATIONS
+  [PASS] 23 bib entries; 23 distinct keys cited; 0 undefined \cite
+  [PASS] 0 dangling bib entries (every entry is cited)
+  [PASS] IEEE first-appearance order is ref1..ref23  -> renders [1]..[23]
+
+FIGURES
+  [PASS] 6 figure floats, 6 \includegraphics, all files found on disk
+  [PASS] every figure has \caption and \label
+  [PASS] figure caption placed below graphic (IEEE style)
+
+TABLES
+  [PASS] 3 table floats, all booktabs
+  [PASS] every table has \caption and \label
+  [PASS] table caption placed above tabular (IEEE style)
+
+EQUATIONS
+  [PASS] 14 equation environments
+  [PASS] every \tag has a matching eq:\label; tags = 1,2,3,4a,4b,5..13
+
+OVERALL: PHASE IEEE-3 VALIDATION = PASS
+
+--------------------------------------------------------------------------------
+NOT VERIFIABLE WITHOUT A COMPILER (honest limitation)
+--------------------------------------------------------------------------------
+  - "References compile without errors" and "No undefined references" were
+    validated STATICALLY (key resolution, ordering). A real pdflatex+bibtex run
+    was not performed because no TeX distribution is installed on this machine.
+    The project is written to build with: pdflatex -> bibtex -> pdflatex x2.
+  - Float placement / table column widths (\tabcolsep, \footnotesize/\small on
+    the wide 7-column tables) may need visual fine-tuning after first compile.
+================================================================================

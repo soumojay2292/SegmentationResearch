@@ -1,0 +1,2 @@
+epoch,lr,train_loss,train_seg_loss,train_boundary_loss,val_loss,val_dice,val_miou,val_acc,val_sensitivity,val_specificity,val_f1
+1,0.001000,1.0720,1.0720,0.0000,1.1815,0.5557,0.4286,0.7698,0.7524,0.7942,0.5557

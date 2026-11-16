@@ -1,0 +1,84 @@
+%==============================================================================
+% IEEE journal manuscript — project skeleton (placeholder content).
+% Document class: IEEEtran (official). Body is migrated in a later phase.
+%
+% Build:  pdflatex main  ->  bibtex main  ->  pdflatex main  ->  pdflatex main
+% (see README.md for a one-line latexmk command and for IEEEtran.cls provenance)
+%==============================================================================
+\documentclass[journal]{IEEEtran}
+
+% ---- Packages --------------------------------------------------------------
+\usepackage[T1]{fontenc}             % proper glyphs for accented names
+\usepackage[utf8]{inputenc}          % input encoding (portable on older TeX)
+\usepackage{cite}                    % IEEE-style reference handling
+\usepackage{amsmath}                 % equations
+\usepackage{amssymb}                 % math symbols
+\usepackage{graphicx}                % figures
+\graphicspath{{figures/}}            % figure search path
+\usepackage{booktabs}                % professional tables (\toprule etc.)
+\usepackage{multirow}                % multi-row table cells
+\usepackage{subcaption}              % multi-panel figures (Figs. 3, 5, 6)
+\captionsetup{font=footnotesize}     % captions clearly smaller than 10pt body, consistent across all floats
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}     % load last; internal/external links
+
+% ---- Production typesetting (spacing/penalties only; no content change) -----
+\widowpenalty=10000        % suppress widow lines (lone line atop a column)
+\clubpenalty=10000         % suppress orphan lines (lone line at a column foot)
+\displaywidowpenalty=10000 % same, for lines adjacent to displayed equations
+\brokenpenalty=10000       % avoid a page break right after a hyphenation
+\emergencystretch=1em      % last-resort interword stretch to clear overfull lines
+\allowdisplaybreaks        % permit page breaks between rows of aligned equations
+\raggedbottom              % slack to the column foot, not stretched mid-column
+                           % (prevents inter-paragraph gaps on figure-heavy pages)
+\urlstyle{same}            % \nolinkurl in author e-mails keeps the roman body font
+
+% ---- Front matter ----------------------------------------------------------
+\begin{document}
+
+\title{SpecGate-Net: Spatial--Spectral Gated Fusion for\\
+       Boundary-Faithful Skin Lesion Segmentation}
+
+\author{
+\begin{tabular}{c c}
+Soumojay Karmakar &  Lokesh Singh \\
+\textit{Manipal Institute of Technology Bengaluru,} &
+\textit{Manipal Institute of Technology Bengaluru,} \\
+\textit{Manipal Academy of Higher Education,} &
+\textit{Manipal Academy of Higher Education,} \\
+Manipal, India & Manipal, India \\
+soumojay.mitblr2025@learner.manipal.edu &
+singh.lokesh@manipal.edu \\
+\end{tabular}
+}
+
+\markboth{}%
+{Karmakar and Singh: Dual-Stream Spatial--Spectral Fusion for Dermoscopic Segmentation}
+
+\maketitle
+
+% ---- Abstract & keywords ---------------------------------------------------
+\input{sections/abstract}
+
+\begin{IEEEkeywords}
+Skin lesion segmentation, dermoscopy, boundary fidelity, frequency-domain
+representation, gated feature fusion, frozen foundation model, deep supervision,
+ISIC.
+\end{IEEEkeywords}
+
+\IEEEpeerreviewmaketitle
+
+% ---- Body (one file per section) -------------------------------------------
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/methodology}
+\input{sections/experiments}
+\input{sections/results}
+\input{sections/discussion}
+\input{sections/conclusion}
+
+% ---- Bibliography ----------------------------------------------------------
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

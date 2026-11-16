@@ -1,0 +1,25 @@
+📁 latex
+⏱️  Generated in 2 ms
+──────────────────────────────────────────────────
+├── 📁 assets
+├── 📁 figures
+│   ├── 📄 Figure1_Architecture.pdf
+│   ├── 📄 Figure2_FrequencyBranch.pdf
+│   ├── 📄 Figure3_FeatureAlignment_GatedFusion.pdf
+│   ├── 📄 Figure4_QualitativeComparison.pdf
+│   ├── 📄 Figure5_RegionMetrics.pdf
+│   └── 📄 Figure6_BoundaryMetrics.pdf
+├── 📁 output
+├── 📁 sections
+│   ├── 📄 abstract.tex
+│   ├── 📄 conclusion.tex
+│   ├── 📄 discussion.tex
+│   ├── 📄 experiments.tex
+│   ├── 📄 introduction.tex
+│   ├── 📄 methodology.tex
+│   ├── 📄 related_work.tex
+│   └── 📄 results.tex
+├── 📁 tables
+├── 📄 main.tex
+├── 📝 README.md
+└── 📄 references.bib

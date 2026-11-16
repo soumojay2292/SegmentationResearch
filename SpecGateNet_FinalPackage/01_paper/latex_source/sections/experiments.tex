@@ -1,0 +1,76 @@
+\section{Experimental Setup}
+\label{sec:exp}
+
+\subsection{Datasets}
+
+The proposed framework is evaluated on three publicly available dermoscopic skin-lesion segmentation benchmarks released through the International Skin Imaging Collaboration (ISIC): ISIC 2016 \cite{ref20}, ISIC 2017 \cite{ref21}, and ISIC 2018 \cite{ref22}. Each provides dermoscopic images of pigmented lesions with expert-annotated binary masks delineating the lesion from the surrounding skin. The three datasets differ in scale and in the diversity of lesion appearance, and together they span the imaging conditions --- low contrast, diffuse or irregular boundaries, and occlusion by hair --- that motivate the boundary-oriented design of Section~\ref{sec:method}. Evaluating across all three assesses the network under progressively larger and more heterogeneous data rather than on a single collection.
+
+Each dataset is partitioned into disjoint training, validation, and test subsets, and these partitions are held fixed throughout all experiments so that no image contributes to more than one subset. For ISIC 2016 the partition comprises 895 training, 192 validation, and 192 test images; for ISIC 2017, 1600 training, 200 validation, and 200 test images; and for ISIC 2018, 1825 training, 377 validation, and 392 test images. The validation subset is used exclusively for model selection, and the test subset is reserved for final evaluation, never consulted during training or checkpoint selection, so that all reported comparisons are made on data unseen during optimisation.
+
+All images and masks undergo identical preprocessing before training and evaluation. Each image is read as three-channel RGB and each mask as single-channel grayscale, and both are resized to 384$\times$384 pixels --- bilinear interpolation for the images and nearest-neighbour for the masks, which preserves the binary character of the annotations --- after which each mask is binarised at a threshold of one half. During training, and only on the training subset, standard geometric and photometric augmentation is applied: random horizontal and vertical flips, random rotation within thirty degrees, an occasional random affine transformation combining limited rotation, translation, scaling, and shear, and a mild jitter of brightness, contrast, saturation, and hue. The validation and test images are processed without augmentation. Input intensities are standardised to the statistics expected by the frozen encoder within the network, as described in Section~\ref{subsec:backbone}, rather than as a dataset-level operation, so that every model receives inputs on a common footing.
+
+\subsection{Implementation Details}
+\label{subsec:impl}
+
+All networks operate on inputs of 384$\times$384 pixels and are trained under a single, consistent configuration, so that differences in behaviour can be attributed to the architectures rather than the training regime. Optimisation uses the AdamW optimiser~\cite{ref33} with decoupled weight decay, an initial learning rate of $1\times10^{-3}$, and a weight decay of $1\times10^{-2}$; the learning rate is annealed linearly to zero over the course of training, and a mini-batch size of two images is used throughout. Training is performed under mixed-precision automatic casting in the bfloat16 format, whose full-range exponent removes the need for gradient loss scaling, and gradients are clipped to a maximum norm of unity at each step. Each model is trained for up to forty epochs; the convolutional baselines are additionally governed by early stopping on the validation Dice score, with a patience of ten epochs, whereas the SpecGate-Net and the MAFF-Net~\cite{ref15} complete the full schedule.
+
+The training objective differs between the two groups of models in accordance with their design. The SpecGate-Net, together with the MAFF-Net~\cite{ref15} reproduction that serves as a prior-work reference control, is trained with the composite Boundary-centric Dual Supervision objective defined in Section~\ref{subsec:loss}. The convolutional baselines are trained with a standard region objective combining the soft Dice loss with a class-weighted binary cross-entropy, the positive class up-weighted to counteract the imbalance between lesion and background pixels. In every case the pretrained SAM2 (Hiera-Large) image encoder \cite{ref10} is retained as a frozen feature extractor, consistent with the role of the backbone established in Section~\ref{subsec:backbone}.
+
+All experiments are conducted on a single NVIDIA RTX 2000 Ada Generation graphics processing unit. The software environment comprises Python 3.10, PyTorch 2.7.1 built against CUDA 11.8, on the Windows operating system. The boundary-based metrics introduced below are computed with the MedPy library (version 0.5.2, which relies on SimpleITK) \cite{ref23} together with a direct implementation of the Boundary IoU measure; these are used solely for evaluation and form no part of the training pipeline.
+
+\subsection{Evaluation Metrics}
+\label{subsec:metrics}
+
+Segmentation quality is assessed with two complementary families of metrics: the first measures the region overlap between the predicted and reference lesion regions, the second the fidelity of the predicted lesion boundary. Reporting both is essential here because, as argued in Section~\ref{subsec:bcds} and consistent with recent recommendations on problem-aware metric selection \cite{ref30}, region-overlap measures are comparatively insensitive to errors confined to the boundary --- the very behaviour the method is designed to improve. For all metrics, predictions are obtained by applying the logistic sigmoid to the network output and thresholding at one half, using the primary deep-supervision head, and each metric is aggregated over the test set as the mean across evaluation batches, weighted by the number of images per batch. A small constant is added to the denominators to keep every expression well defined when a region is empty.
+
+The region-based metrics are derived from the per-pixel counts of true positives $\mathrm{TP}$, false positives $\mathrm{FP}$, true negatives $\mathrm{TN}$, and false negatives $\mathrm{FN}$ between the thresholded prediction and the binary reference, and are defined in Table~\ref{tab:metrics}. The IoU (Jaccard index) is a stricter overlap measure than the Dice coefficient; both, together with the sensitivity (equivalently, recall) and the specificity, are computed for the lesion (foreground) class, whereas the accuracy, dominated by the large background region typical of dermoscopic images, is reported for completeness rather than as a primary discriminator.
+
+\begin{table}[!t]
+\centering
+\renewcommand{\arraystretch}{1.35}
+\caption{Region-based evaluation metrics, computed from the per-pixel counts of
+true positives ($\mathrm{TP}$), false positives ($\mathrm{FP}$), true negatives
+($\mathrm{TN}$), and false negatives ($\mathrm{FN}$).}
+\label{tab:metrics}
+\setlength{\tabcolsep}{5pt}
+\footnotesize
+\begin{tabular}{@{}lcl@{}}
+\toprule
+Metric & Expression & Purpose \\
+\midrule
+Accuracy & $\dfrac{\mathrm{TP}+\mathrm{TN}}{\mathrm{TP}+\mathrm{FP}+\mathrm{TN}+\mathrm{FN}}$ & overall pixel correctness \\
+Dice & $\dfrac{2\,\mathrm{TP}}{2\,\mathrm{TP}+\mathrm{FP}+\mathrm{FN}}$ & region overlap (primary) \\
+IoU (Jaccard) & $\dfrac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FP}+\mathrm{FN}}$ & stricter region overlap \\
+Sensitivity & $\dfrac{\mathrm{TP}}{\mathrm{TP}+\mathrm{FN}}$ & recall of lesion pixels \\
+Specificity & $\dfrac{\mathrm{TN}}{\mathrm{TN}+\mathrm{FP}}$ & background correctness \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The boundary-based metrics operate on the contours of the predicted and reference regions. Let $\partial P$ and $\partial G$ denote the boundary pixels of the prediction and the ground truth, and for a point $a$ and a set $S$ let $d(a,S)=\min_{s\in S}\lVert a-s\rVert$ be the Euclidean distance from $a$ to its nearest point in $S$. The average symmetric surface distance (ASSD) is the mean nearest-neighbour distance in both directions between the contours,
+\begin{equation}
+\mathrm{ASSD} = \frac{\sum_{p\in\partial P} d(p,\partial G) + \sum_{g\in\partial G} d(g,\partial P)}{\lvert\partial P\rvert + \lvert\partial G\rvert}, \tag{8}
+\label{eq:12}
+\end{equation}
+and the 95th-percentile Hausdorff distance (HD95) is the 95th percentile of the same symmetric point-to-contour distances, a robust variant that discounts the most extreme outliers,
+\begin{equation}
+\mathrm{HD95} = \mathrm{P}_{95}\big(\{\, d(p,\partial G) : p\in\partial P\,\} \cup \{\, d(g,\partial P) : g\in\partial G\,\}\big). \tag{9}
+\label{eq:13}
+\end{equation}
+Both ASSD and HD95 are distance measures for which smaller values indicate closer agreement between the predicted and reference contours; because the images are resized from heterogeneous native resolutions with no physical pixel spacing retained, they are expressed in pixels of the 384$\times$384 evaluation grid rather than in millimetres. The Boundary IoU complements them with an overlap measure restricted to a narrow band around the contour: following the standard formulation \cite{ref12}, a boundary band is obtained for each mask by subtracting its morphological erosion from the mask, the band width being two per cent of the image diagonal, and the IoU is computed between the two bands. Unlike the region IoU, the Boundary IoU is sensitive to contour displacements even when the overall region overlap is large, with larger values indicating better agreement.
+
+\subsection{Experimental Protocol}
+\label{subsec:protocol}
+
+The SpecGate-Net is compared against four representative segmentation networks trained and evaluated within the same repository under the protocol described above: the U-Net, the Attention U-Net, the UNet++, and the TransUNet, spanning classical encoder--decoder, attention-gated, nested, and transformer-hybrid designs. They are trained on the identical data partitions, input resolution, and batch size as SpecGate-Net, differing only in the training objective appropriate to each group, as noted in Section~\ref{subsec:impl}. The MAFF-Net~\cite{ref15} is a reproduction of the published MAFF-Net architecture, evaluated under the same protocol as a prior-work reference control rather than as a proposed model or external baseline.
+
+A single canonical evaluation protocol is applied uniformly to every model. For each training run the checkpoint achieving the highest validation Dice score is retained and carried forward to evaluation; no test-set information influences its selection. Each retained checkpoint is then evaluated once on the held-out test subset of the corresponding dataset, and the region-based and boundary-based metrics of Section~\ref{subsec:metrics} are computed from the same predictions, using the same thresholding and aggregation. Applying this shared procedure to every model, baseline and proposed alike, ensures that the reported differences reflect the models rather than differences in measurement.
+
+The architectural contributions of the SpecGate-Net are examined through a component ablation on ISIC 2018, the largest and most heterogeneous of the three benchmarks. The ablation follows a leave-one-out design: the complete SpecGate-Net is the reference configuration, and three further configurations each disable exactly one component --- the Frequency Branch, the Feature Alignment Module, and the Gated Fusion Module. The disabled component is replaced by a shape-preserving substitute that leaves the rest of the network and its tensor dimensions unchanged --- the Frequency Branch and the Feature Alignment Module by identity mappings, and the learned gate of the Gated Fusion Module by a fixed, unweighted mean of the two streams --- so that the effect of each component can be isolated. Every ablated configuration is trained with the identical configuration used for the SpecGate-Net and evaluated with the same canonical protocol and metrics, while the reference configuration reuses the existing SpecGate-Net checkpoint without retraining. The frozen encoder, decoder, and reconstruction branch are held fixed across all configurations, so that the study measures only the components introduced in this work.
+
+\subsection{Statistical Analysis}
+\label{subsec:stats}
+
+To assess whether the differences between models reflect more than incidental variation, the per-image region-based and boundary-based metrics of Section~\ref{subsec:metrics} --- computed from the same test-set predictions as the aggregate results --- are analysed with non-parametric paired tests that treat the individual test images as the unit of analysis. For each dataset and metric, a Friedman test across all six models assesses the global null hypothesis that the models are equivalent. Where it is rejected, the SpecGate-Net is compared against each of the other five models by a two-sided Wilcoxon signed-rank test on the paired per-image values, and the five resulting $p$-values are corrected for multiple comparisons by the Holm procedure within each dataset and metric. Each difference is summarised by the matched-pairs rank-biserial correlation as an effect size, and a 95\% confidence interval for the median paired difference is obtained by the percentile bootstrap with ten thousand resamples. For HD95 and ASSD, which are undefined when a prediction is empty, comparisons use complete-case pairing over the images for which both models produced a non-empty prediction. All tests are two-sided at a significance level of $\alpha=0.05$ and are computed with the SciPy scientific-computing library. Because every model is trained once, this analysis characterises the dispersion across images within that single run and does not address run-to-run variability, as discussed in Section~\ref{subsec:limitations}.
+
+The following section reports these experiments: first the comparison of the SpecGate-Net with the baselines under the region-based and boundary-based metrics, then the statistical significance of those differences, and finally the component ablation on ISIC 2018.
